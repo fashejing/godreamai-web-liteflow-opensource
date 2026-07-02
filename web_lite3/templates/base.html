@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="{{ theme }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }} | {{ app_display_name }}</title>
+  <link rel="icon" href="data:,">
+  <script>
+    (() => {
+      const key = "godreamai-plus-sidebar-width";
+      const min = 220;
+      const max = 520;
+      try {
+        const raw = window.localStorage.getItem(key);
+        const numeric = Number(raw);
+        if (Number.isFinite(numeric)) {
+          const width = Math.max(min, Math.min(max, Math.round(numeric)));
+          document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+        }
+      } catch (_error) {
+        // Local storage may be unavailable; keep the CSS default.
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_asset_version }}">
+  <link rel="modulepreload" href="/static/js/common.js?v={{ static_asset_version }}">
+  <link rel="modulepreload" href="/static/js/workspace.js?v={{ static_asset_version }}">
+  <link rel="prefetch" href="/image">
+  <link rel="prefetch" href="/video">
+  <link rel="prefetch" href="/blender">
+  <link rel="prefetch" href="/canvas">
+  <link rel="prefetch" href="/library">
+  <link rel="prefetch" href="/settings">
+</head>
+<body data-theme="{{ theme }}">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-copy">
+          <div class="brand-title"><strong>{{ app_brand_title_emphasis }}</strong>{{ app_brand_title_rest }}</div>
+          <div class="brand-subtitle">{{ app_brand_sidebar_subtitle }}</div>
+        </div>
+      </div>
+      <nav class="side-nav">
+        <a href="/image" class="side-link {% if active_tab == 'image' %}is-active{% endif %}">生图</a>
+        <a href="/video" class="side-link {% if active_tab == 'video' %}is-active{% endif %}">生视频</a>
+        <a href="/blender" class="side-link {% if active_tab == 'blender' %}is-active{% endif %}">Blender</a>
+        <a href="/canvas" class="side-link {% if active_tab == 'canvas' %}is-active{% endif %}">无限画布</a>
+        <a href="/library" class="side-link {% if active_tab == 'library' %}is-active{% endif %}">素材库</a>
+        <a href="/settings" class="side-link {% if active_tab == 'settings' %}is-active{% endif %}">设置</a>
+      </nav>
+      <div class="sidebar-controls">
+        {% block sidebar_controls %}{% endblock %}
+      </div>
+      <div id="toastLayer" class="sidebar-notice-stack" aria-live="polite" aria-atomic="false"></div>
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-copy">©井鸽2026</div>
+        <a class="sidebar-footer-link" href="https://www.wellpigeon.com" target="_blank" rel="noopener noreferrer">www.wellpigeon.com</a>
+      </div>
+      <div
+        id="sidebarResizer"
+        class="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整侧边栏宽度"
+        tabindex="0"
+      ></div>
+    </aside>
+    <main class="main-shell">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <dialog id="detailModal" class="detail-modal">
+    <div class="detail-header">
+      <div>
+        <div id="detailTitle" class="detail-title">详情</div>
+        <div id="detailMeta" class="detail-meta"></div>
+      </div>
+      <button id="detailCloseButton" class="ghost-button" type="button">关闭</button>
+    </div>
+    <div id="detailBody" class="detail-body"></div>
+    <div class="detail-actions">
+      <button id="detailFullscreenButton" class="secondary-button" type="button">查看原图/全屏</button>
+      <button id="detailProviderDeleteButton" class="ghost-button" type="button" hidden>删除远端任务</button>
+      <button id="detailReuseButton" class="primary-button" type="button">复用参数</button>
+    </div>
+  </dialog>
+  <script type="module" src="/static/js/common.js?v={{ static_asset_version }}"></script>
+</body>
+</html>

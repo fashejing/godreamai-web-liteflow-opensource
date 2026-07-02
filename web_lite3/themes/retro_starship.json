@@ -1,0 +1,40 @@
+{
+  "name": "Retro Starship",
+  "type": "dark",
+  "palette": {
+    "brand": {
+      "main": "#4EE6C2",
+      "hover": "#6EF0D0",
+      "pressed": "#21C7A2",
+      "subtle": "rgba(78, 230, 194, 0.12)"
+    },
+    "semantic": {
+      "success": "#5EE18B",
+      "warning": "#FFB14F",
+      "error": "#FF6D65"
+    },
+    "neutral": {
+      "bg_app": "#0B1017",
+      "bg_panel": "rgba(17, 24, 33, 0.9)",
+      "bg_card": "#121A24",
+      "bg_input": "#0F1822",
+      "bg_sidebar": "#091018",
+      "border_subtle": "rgba(123, 179, 166, 0.2)",
+      "border_strong": "rgba(255, 177, 79, 0.34)"
+    },
+    "text": {
+      "primary": "#EDF6F7",
+      "secondary": "#97ABB6",
+      "tertiary": "#7F919B",
+      "disabled": "#51616C",
+      "on_brand": "#06110F"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 16,
+    "radius_base": 12,
+    "radius_sm": 8
+  }
+}

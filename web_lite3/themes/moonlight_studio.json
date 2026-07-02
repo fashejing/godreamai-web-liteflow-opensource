@@ -1,0 +1,40 @@
+{
+  "name": "Moonlight Studio",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#7C3AED",
+      "hover": "#6D28D9",
+      "pressed": "#5B21B6",
+      "subtle": "rgba(124, 58, 237, 0.1)"
+    },
+    "semantic": {
+      "success": "#0F9F6E",
+      "warning": "#B7791F",
+      "error": "#D61F69"
+    },
+    "neutral": {
+      "bg_app": "#F7F3FF",
+      "bg_panel": "rgba(255, 255, 255, 0.86)",
+      "bg_card": "#F2EAFF",
+      "bg_input": "#FAF7FF",
+      "bg_sidebar": "#EDE9FE",
+      "border_subtle": "rgba(124, 58, 237, 0.2)",
+      "border_strong": "rgba(109, 40, 217, 0.36)"
+    },
+    "text": {
+      "primary": "#21143F",
+      "secondary": "#5B4B7A",
+      "tertiary": "#756596",
+      "disabled": "#AAA0BE",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 20,
+    "radius_base": 14,
+    "radius_sm": 10
+  }
+}

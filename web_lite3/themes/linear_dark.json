@@ -1,0 +1,40 @@
+{
+  "name": "Linear Dark",
+  "type": "dark",
+  "palette": {
+    "brand": {
+      "main": "#5E6AD2",
+      "hover": "#6F7BF4",
+      "pressed": "#4C55AA",
+      "subtle": "rgba(94, 106, 210, 0.15)"
+    },
+    "semantic": {
+      "success": "#27C93F",
+      "warning": "#FFBC2E",
+      "error": "#FF5F56"
+    },
+    "neutral": {
+      "bg_app": "#0F0F11",
+      "bg_panel": "#161618",
+      "bg_card": "#1C1C1F",
+      "bg_input": "#222225",
+      "bg_sidebar": "#131315",
+      "border_subtle": "#303035",
+      "border_strong": "#3E3E44"
+    },
+    "text": {
+      "primary": "#EEEEEE",
+      "secondary": "#888888",
+      "tertiary": "#7A7A7A",
+      "disabled": "#444444",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 8,
+    "radius_base": 6,
+    "radius_sm": 4
+  }
+}

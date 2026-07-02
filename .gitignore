@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+.pytest_cache/
+.venv/
+dist/
+.launcher-build/
+.launcher-runtime/
+GoDreamAI Plus.app/
+launcher-win/bin/
+launcher-win/obj/
+web_lite3/blender_app/assets/imports/
+web_lite3/blender_app/assets/textures/

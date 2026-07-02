@@ -1,0 +1,40 @@
+{
+  "name": "Linear High Contrast",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#0F62FE",
+      "hover": "#0043CE",
+      "pressed": "#002D9C",
+      "subtle": "rgba(15, 98, 254, 0.12)"
+    },
+    "semantic": {
+      "success": "#198038",
+      "warning": "#8A3800",
+      "error": "#DA1E28"
+    },
+    "neutral": {
+      "bg_app": "#FFFFFF",
+      "bg_panel": "#FFFFFF",
+      "bg_card": "#F7F7F7",
+      "bg_input": "#FFFFFF",
+      "bg_sidebar": "#F3F3F3",
+      "border_subtle": "#8D8D8D",
+      "border_strong": "#161616"
+    },
+    "text": {
+      "primary": "#161616",
+      "secondary": "#393939",
+      "tertiary": "#525252",
+      "disabled": "#6F6F6F",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 8,
+    "radius_base": 6,
+    "radius_sm": 4
+  }
+}

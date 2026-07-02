@@ -1,0 +1,40 @@
+{
+  "name": "Dopamine Pop",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#ff2f92",
+      "hover": "#e30077",
+      "pressed": "#b90062",
+      "subtle": "rgba(255, 47, 146, 0.12)"
+    },
+    "semantic": {
+      "success": "#00b86b",
+      "warning": "#ff9f00",
+      "error": "#ff385c"
+    },
+    "neutral": {
+      "bg_app": "#fff7fd",
+      "bg_panel": "#ffffff",
+      "bg_card": "#fff0fb",
+      "bg_input": "#fffaff",
+      "bg_sidebar": "#ffcf39",
+      "border_subtle": "#ffc7e4",
+      "border_strong": "#ff2f92"
+    },
+    "text": {
+      "primary": "#1c1020",
+      "secondary": "#57314f",
+      "tertiary": "#84506f",
+      "disabled": "#b98ca9",
+      "on_brand": "#ffffff"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 12,
+    "radius_base": 8,
+    "radius_sm": 6
+  }
+}

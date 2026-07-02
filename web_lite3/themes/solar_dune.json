@@ -1,0 +1,40 @@
+{
+  "name": "Solar Dune",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#D97706",
+      "hover": "#B45309",
+      "pressed": "#92400E",
+      "subtle": "rgba(217, 119, 6, 0.1)"
+    },
+    "semantic": {
+      "success": "#15803D",
+      "warning": "#B45309",
+      "error": "#BE123C"
+    },
+    "neutral": {
+      "bg_app": "#FFF7ED",
+      "bg_panel": "rgba(255, 251, 235, 0.9)",
+      "bg_card": "#FEF3C7",
+      "bg_input": "#FFF7ED",
+      "bg_sidebar": "#FDE68A",
+      "border_subtle": "rgba(180, 83, 9, 0.22)",
+      "border_strong": "rgba(146, 64, 14, 0.42)"
+    },
+    "text": {
+      "primary": "#2A1607",
+      "secondary": "#76512B",
+      "tertiary": "#986C3C",
+      "disabled": "#B99A72",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 18,
+    "radius_base": 13,
+    "radius_sm": 9
+  }
+}

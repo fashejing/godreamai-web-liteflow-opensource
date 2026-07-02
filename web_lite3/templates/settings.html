@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script id="page-config" type="application/json">{{ page_config | tojson }}</script>
+
+<section class="settings-page">
+  <form id="settingsForm" class="panel settings-panel">
+    <div class="panel-title">设置</div>
+
+    <div class="settings-grid">
+      <label class="field">
+        <span>Volcengine API Key</span>
+        <input id="volcengineApiKey" type="password" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>历史 Key</span>
+        <select id="volcengineApiKeyHistorySelect">
+          <option value="">选择已保存的 Key</option>
+          {% for item in page_config.masked_api_key_history.volcengine %}
+          <option value="{{ item.value }}">{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>资产存储目录</span>
+        <div class="inline-picker">
+          <input id="storageDir" type="text">
+          <button id="pickStorageDirButton" class="secondary-button" type="button">选择目录</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>主题</span>
+        <select id="themeSelect">
+          {% for item in page_config.available_themes %}
+          <option value="{{ item.value }}">{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>任务卡片大小</span>
+        <select id="recordCardSizeSelect">
+          {% for item in page_config.record_card_sizes %}
+          <option value="{{ item.value }}">{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field slider-field">
+        <span>提示词字号</span>
+        <div class="slider-input-row">
+          <input id="promptFontSizeRange" type="range" min="14" max="28" step="1">
+          <span id="promptFontSizeValue" class="slider-value">16px</span>
+        </div>
+      </label>
+      <label class="field toggle-field">
+        <input id="autoOpenBrowser" type="checkbox">
+        <span>启动后自动打开浏览器</span>
+      </label>
+    </div>
+
+    <section class="settings-subpanel api-network-panel">
+      <div class="subpanel-head">
+        <div>
+          <div class="panel-title">VPN 状态助手</div>
+          <div class="section-label">开源版仅检测火山引擎，通常需要关闭 VPN 后直连</div>
+        </div>
+        <button id="apiNetworkCheckButton" class="secondary-button" type="button">检测连通性</button>
+      </div>
+      <input id="volcengineNetworkMode" type="hidden" value="direct">
+      <input id="apiNetworkAutoSwitch" type="hidden" value="true">
+      <input id="apiProxyUrl" type="hidden" value="">
+      <div id="apiNetworkStatus" class="network-status-list"></div>
+    </section>
+
+    <div class="settings-actions">
+      <button class="primary-button" type="submit">保存设置</button>
+    </div>
+  </form>
+
+  <section class="stats-grid">
+    <article class="panel chart-panel">
+      <div class="chart-panel-head">
+        <div>
+          <div class="panel-title">生图耗时统计</div>
+          <div class="section-label">当前资产包 · 仅统计成功任务</div>
+        </div>
+        <div class="chart-summary">
+          <div class="chart-summary-label">平均耗时</div>
+          <div id="imageAverageElapsed" class="chart-summary-value">-</div>
+        </div>
+      </div>
+      <div id="imageModelAverages" class="chart-breakdown"></div>
+      <div id="imageModeAverages" class="chart-breakdown"></div>
+      <div id="imageDurationLegend" class="chart-legend"></div>
+      <div id="imageDurationChart" class="chart-host"></div>
+    </article>
+
+    <article class="panel chart-panel">
+      <div class="chart-panel-head">
+        <div>
+          <div class="panel-title">生视频耗时统计</div>
+          <div class="section-label">当前资产包 · 仅统计成功任务</div>
+        </div>
+        <div class="chart-summary">
+          <div class="chart-summary-label">平均耗时</div>
+          <div id="videoAverageElapsed" class="chart-summary-value">-</div>
+        </div>
+      </div>
+      <div id="videoModelAverages" class="chart-breakdown"></div>
+      <div id="videoModeAverages" class="chart-breakdown"></div>
+      <div id="videoDurationLegend" class="chart-legend"></div>
+      <div id="videoDurationChart" class="chart-host"></div>
+    </article>
+  </section>
+
+  <section class="panel company-panel">
+    <div class="panel-title">开发信息</div>
+    <div class="company-copy">©井鸽（成都）人工智能科技有限公司 2026</div>
+    <a class="company-link" href="https://www.wellpigeon.com" target="_blank" rel="noopener">www.wellpigeon.com</a>
+    <div class="company-copy">联络微信：fashejing</div>
+    <div class="company-copy">网信算备510107649555501260013号</div>
+  </section>
+</section>
+
+<script type="module" src="/static/js/settings.js?v={{ static_asset_version }}"></script>
+{% endblock %}

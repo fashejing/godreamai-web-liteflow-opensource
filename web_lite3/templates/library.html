@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script id="page-config" type="application/json">{{ page_config | tojson }}</script>
+
+<section class="library-page">
+  <section class="panel library-panel">
+    <div class="panel-toolbar">
+      <div>
+        <div class="panel-title">素材库</div>
+        <div id="libraryStatusText" class="status-text">按当前资产包隔离管理</div>
+      </div>
+      <div class="toolbar-actions library-source-actions">
+        <button id="pickLibrarySourceButton" class="secondary-button" type="button">选择本地素材库</button>
+        <button id="refreshLibrarySourceButton" class="ghost-button" type="button">刷新</button>
+      </div>
+    </div>
+    <div id="librarySourceMeta" class="library-source-meta">当前未连接本地素材库</div>
+    <div id="librarySections" class="library-sections"></div>
+  </section>
+</section>
+
+<dialog id="libraryPreviewModal" class="library-preview-modal">
+  <div class="library-preview-header">
+    <div class="library-preview-copy">
+      <div id="libraryPreviewTitle" class="library-preview-title">素材预览</div>
+      <div id="libraryPreviewMeta" class="library-preview-meta"></div>
+    </div>
+    <button id="libraryPreviewCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="library-preview-body">
+    <img id="libraryPreviewImage" class="library-preview-image" alt="素材预览">
+  </div>
+</dialog>
+
+<script type="module" src="/static/js/library.js"></script>
+{% endblock %}

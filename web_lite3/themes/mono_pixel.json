@@ -1,0 +1,40 @@
+{
+  "name": "Mono Pixel",
+  "type": "dark",
+  "palette": {
+    "brand": {
+      "main": "#ffffff",
+      "hover": "#e5e7eb",
+      "pressed": "#cbd5e1",
+      "subtle": "rgba(255, 255, 255, 0.12)"
+    },
+    "semantic": {
+      "success": "#ffffff",
+      "warning": "#d1d5db",
+      "error": "#f3f4f6"
+    },
+    "neutral": {
+      "bg_app": "#050505",
+      "bg_panel": "#0f0f0f",
+      "bg_card": "#171717",
+      "bg_input": "#000000",
+      "bg_sidebar": "#000000",
+      "border_subtle": "#3f3f46",
+      "border_strong": "#ffffff"
+    },
+    "text": {
+      "primary": "#ffffff",
+      "secondary": "#d4d4d8",
+      "tertiary": "#a1a1aa",
+      "disabled": "#71717a",
+      "on_brand": "#000000"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 0,
+    "radius_base": 0,
+    "radius_sm": 0
+  }
+}

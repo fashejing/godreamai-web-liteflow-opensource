@@ -1,0 +1,17 @@
+Windows 用户不要直接使用 GitHub 自动生成的 `Source code` 压缩包。
+
+如果解压后看到的是：
+- `.csproj`
+- `.cs`
+- `launcher-win-source`
+
+说明下载的是源码包，不是可直接双击运行的启动器。
+
+正确下载方式：
+1. 打开 GitHub Release 页面
+2. 在同一个 hybrid release 版本里下载资产：`GoDreamAI-Plus-Windows.zip`
+3. 解压后直接双击：`GoDreamAI Plus Launcher.exe`
+
+说明：
+- `launcher-win-source` 是 Windows 启动器源码目录
+- 可运行的 `.exe` 只通过 Release 资产分发，不直接放在源码包里

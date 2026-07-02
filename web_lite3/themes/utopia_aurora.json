@@ -1,0 +1,40 @@
+{
+  "name": "Utopia Aurora",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#5F6FFF",
+      "hover": "#485AF7",
+      "pressed": "#3346E1",
+      "subtle": "rgba(95, 111, 255, 0.1)"
+    },
+    "semantic": {
+      "success": "#18A96D",
+      "warning": "#C77D14",
+      "error": "#D84A68"
+    },
+    "neutral": {
+      "bg_app": "#EEF5FF",
+      "bg_panel": "rgba(255, 255, 255, 0.82)",
+      "bg_card": "#F5F9FF",
+      "bg_input": "rgba(244, 248, 255, 0.94)",
+      "bg_sidebar": "#DFF8F7",
+      "border_subtle": "rgba(133, 162, 210, 0.28)",
+      "border_strong": "rgba(95, 111, 255, 0.34)"
+    },
+    "text": {
+      "primary": "#15233D",
+      "secondary": "#52627E",
+      "tertiary": "#6C7C97",
+      "disabled": "#9AA8BD",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 16,
+    "radius_base": 12,
+    "radius_sm": 8
+  }
+}

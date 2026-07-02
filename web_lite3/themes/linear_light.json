@@ -1,0 +1,40 @@
+{
+  "name": "Linear Light",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#5E6AD2",
+      "hover": "#4B56B2",
+      "pressed": "#3A4391",
+      "subtle": "rgba(94, 106, 210, 0.08)"
+    },
+    "semantic": {
+      "success": "#22A547",
+      "warning": "#E5A500",
+      "error": "#E54D42"
+    },
+    "neutral": {
+      "bg_app": "#F8F8F9",
+      "bg_panel": "#FAFAFA",
+      "bg_card": "#F5F5F7",
+      "bg_input": "#EEEFF1",
+      "bg_sidebar": "#F5F5F5",
+      "border_subtle": "#E5E5E5",
+      "border_strong": "#D4D4D4"
+    },
+    "text": {
+      "primary": "#121212",
+      "secondary": "#666666",
+      "tertiary": "#767676",
+      "disabled": "#AAAAAA",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 8,
+    "radius_base": 6,
+    "radius_sm": 4
+  }
+}

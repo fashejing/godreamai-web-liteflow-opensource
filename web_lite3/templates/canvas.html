@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block sidebar_controls %}
+<aside class="panel canvas-inspector canvas-sidebar-inspector">
+  <div class="panel-title">提示参数</div>
+  <div id="canvasInspectorBody" class="canvas-inspector-body"></div>
+</aside>
+{% endblock %}
+
+{% block content %}
+<script id="page-config" type="application/json">{{ page_config | tojson }}</script>
+
+<section class="canvas-page canvas-page-compact">
+  <section class="panel canvas-stage-panel">
+    <div class="canvas-toolbar">
+      <div>
+        <div class="panel-title">无限画布</div>
+        <div id="canvasStatusText" class="status-text">新建图输入或任务节点，连接后运行选中的任务节点</div>
+      </div>
+      <div class="canvas-toolbar-actions">
+        <button id="canvasAddImageInput" class="ghost-button" type="button">图输入</button>
+        <button id="canvasAddImageTask" class="ghost-button" type="button">生图任务</button>
+        <button id="canvasAddVideoTask" class="ghost-button" type="button">生视频任务</button>
+        <button id="canvasUpscaleButton" class="ghost-button" type="button">超分</button>
+        <button id="canvasGridSplitButton" class="ghost-button" type="button">宫格切分</button>
+        <div class="canvas-tool-menu">
+          <button id="canvasGridMenuButton" class="ghost-button" type="button" aria-expanded="false">九宫格</button>
+          <div id="canvasGridMenu" class="canvas-grid-menu" hidden>
+            <button type="button" data-grid-template="multi_camera_9">多机位宫格</button>
+            <button type="button" data-grid-template="plot_4">剧情推演四宫格</button>
+            <button type="button" data-grid-template="plot_9">剧情推演九宫格</button>
+            <button type="button" data-grid-template="white_bg_triptych">白底三视图</button>
+            <button type="button" data-grid-template="scene_after_3s">画面推演 - 3秒后</button>
+            <button type="button" data-grid-template="scene_before_5s">画面推演 - 5秒前</button>
+          </div>
+        </div>
+        <button id="canvasRunSelected" class="primary-button" type="button">运行选中任务</button>
+        <button id="canvasAutoLayout" class="ghost-button" type="button">自动整理</button>
+        <button id="canvasResetView" class="ghost-button" type="button">重置视图</button>
+        <button id="canvasThemeToggle" class="ghost-button" type="button" aria-label="切换画板主题">画板：白</button>
+      </div>
+    </div>
+    <div id="canvasViewport" class="canvas-viewport">
+      <svg id="canvasEdges" class="canvas-edge-layer" aria-hidden="true"></svg>
+      <div id="canvasWorld" class="canvas-world"></div>
+      <div id="canvasSelectionBox" class="canvas-selection-box" hidden></div>
+    </div>
+  </section>
+</section>
+
+<div id="canvasContextMenu" class="canvas-context-menu" hidden>
+  <button class="canvas-blank-context-action" type="button" data-canvas-menu-action="image-input">图输入</button>
+  <button class="canvas-blank-context-action" type="button" data-canvas-menu-action="image-task">生图</button>
+  <button class="canvas-blank-context-action" type="button" data-canvas-menu-action="video-task">生视频</button>
+  <span class="canvas-blank-context-action" aria-hidden="true"></span>
+  <button class="canvas-task-context-action" type="button" data-canvas-menu-action="copy-node" hidden>克隆节点</button>
+  <button class="canvas-task-context-action" type="button" data-canvas-menu-action="delete-node" hidden>删除节点</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-action="image-to-video" hidden>图生视频</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-action="upscale-image" hidden>超分</button>
+  <button class="canvas-image-context-action canvas-result-context-action" type="button" data-canvas-menu-action="add-to-library" hidden>添加到素材库</button>
+  <span class="canvas-image-context-action" aria-hidden="true" hidden></span>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-action="grid-split" hidden>宫格切分</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-template="multi_camera_9" hidden>多机位宫格</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-template="plot_4" hidden>剧情推演四宫格</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-template="plot_9" hidden>剧情推演九宫格</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-template="white_bg_triptych" hidden>白底三视图</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-template="scene_after_3s" hidden>画面推演 - 3秒后</button>
+  <button class="canvas-image-context-action" type="button" data-canvas-menu-template="scene_before_5s" hidden>画面推演 - 5秒前</button>
+  <button class="canvas-blank-context-action" type="button" data-canvas-menu-action="auto-layout">自动整理</button>
+  <button class="canvas-blank-context-action" type="button" data-canvas-menu-action="reset-view">重置视图</button>
+</div>
+
+<dialog id="canvasMultiCameraGridModal" class="confirm-modal canvas-multi-camera-grid-modal">
+  <div class="confirm-modal-head">
+    <div class="detail-title">多机位宫格</div>
+    <button id="canvasMultiCameraGridCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="confirm-modal-body">
+    <div id="canvasMultiCameraGridSummary" class="confirm-modal-summary">选择宫格类型和画幅比例</div>
+    <div class="canvas-multi-camera-grid-fields">
+      <label class="canvas-mini-field">
+        <span>宫格类型</span>
+        <select id="canvasMultiCameraGridType">
+          <option value="3x3" selected>3x3</option>
+          <option value="2x2">2x2</option>
+        </select>
+      </label>
+      <label class="canvas-mini-field">
+        <span>画幅比例</span>
+        <select id="canvasMultiCameraAspectRatio">
+          <option value="source" selected>原图比例</option>
+          <option value="1:1">1:1</option>
+          <option value="16:9">16:9</option>
+          <option value="21:9">21:9</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div class="confirm-modal-actions">
+    <button id="canvasMultiCameraGridCancelButton" class="secondary-button" type="button">取消</button>
+    <button id="canvasMultiCameraGridConfirmButton" class="primary-button" type="button">创建宫格任务</button>
+  </div>
+</dialog>
+
+<div id="canvasImagePicker" class="canvas-picker" hidden>
+  <div class="canvas-picker-backdrop" data-picker-close></div>
+  <section class="canvas-picker-panel" role="dialog" aria-modal="true" aria-labelledby="canvasPickerTitle">
+    <div class="canvas-picker-header">
+      <div>
+        <div id="canvasPickerTitle" class="panel-title">选择图片</div>
+        <div class="status-text">从素材库、资产包结果、上传资源或请求快照中选择一张图</div>
+      </div>
+      <button class="ghost-button" type="button" data-picker-close>关闭</button>
+    </div>
+    <div class="canvas-picker-filters">
+      <input id="canvasPickerSearch" type="search" placeholder="搜索图片名称、提示词或模型">
+      <select id="canvasPickerSource">
+        <option value="">全部来源</option>
+      </select>
+      <button id="canvasPickerUploadButton" class="secondary-button canvas-picker-upload-button" type="button">本地上传</button>
+      <input id="canvasPickerUploadFile" type="file" accept="image/*" hidden>
+    </div>
+    <div id="canvasPickerList" class="canvas-picker-list"></div>
+    <button id="canvasPickerLoadMore" class="secondary-button canvas-load-more" type="button" hidden>加载更多</button>
+  </section>
+</div>
+
+<dialog id="canvasGridSplitModal" class="canvas-grid-split-modal">
+  <div class="canvas-grid-split-header">
+    <div>
+      <div class="panel-title">宫格切分</div>
+      <div id="canvasGridSplitSourceName" class="status-text">选择要切分的宫格</div>
+    </div>
+    <button id="canvasGridSplitCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="canvas-grid-split-controls">
+    <label class="canvas-mini-field">
+      <span>行数</span>
+      <select id="canvasGridSplitRows">
+        <option value="2">2 行</option>
+        <option value="3" selected>3 行</option>
+        <option value="4">4 行</option>
+        <option value="5">5 行</option>
+      </select>
+    </label>
+    <label class="canvas-mini-field">
+      <span>列数</span>
+      <select id="canvasGridSplitCols">
+        <option value="2">2 列</option>
+        <option value="3" selected>3 列</option>
+        <option value="4">4 列</option>
+        <option value="5">5 列</option>
+      </select>
+    </label>
+    <div class="canvas-grid-split-presets" aria-label="宫格预设">
+      <button type="button" data-grid-size="2">4宫格</button>
+      <button type="button" data-grid-size="3">9宫格</button>
+      <button type="button" data-grid-size="4">16宫格</button>
+      <button type="button" data-grid-size="5">25宫格</button>
+    </div>
+  </div>
+  <div id="canvasGridSplitCells" class="canvas-grid-split-cells" aria-label="选择宫格"></div>
+  <div class="canvas-grid-split-actions">
+    <button id="canvasGridSplitSelectAllButton" class="ghost-button" type="button">全选</button>
+    <button id="canvasGridSplitClearButton" class="ghost-button" type="button">清空</button>
+    <button id="canvasGridSplitRunButton" class="primary-button" type="button" disabled>切分选中宫格</button>
+  </div>
+</dialog>
+
+<dialog id="canvasGridSplitChoiceModal" class="confirm-modal">
+  <div class="confirm-modal-head">
+    <div class="detail-title">宫格切分</div>
+    <button id="canvasGridSplitChoiceCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="confirm-modal-body">
+    <div id="canvasGridSplitChoiceSummary" class="confirm-modal-summary">请选择切分方式</div>
+    <div class="confirm-modal-note">直接切分会按已选宫格生成素材；放大切分会先按已选宫格生成子图，再为每张子图创建一个超分辨率生图节点，使用火山引擎图像参考模式按子图比例增强清晰度。</div>
+  </div>
+  <div class="confirm-modal-actions">
+    <button id="canvasGridSplitDirectButton" class="secondary-button" type="button">直接切分</button>
+    <button id="canvasGridSplitUpscaleButton" class="primary-button" type="button">放大切分</button>
+  </div>
+</dialog>
+
+<dialog id="canvasAddLibraryModal" class="confirm-modal">
+  <div class="confirm-modal-head">
+    <div class="detail-title">添加到素材库</div>
+    <button id="canvasAddLibraryCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="confirm-modal-body">
+    <div id="canvasAddLibrarySummary" class="confirm-modal-summary">选择素材库子库</div>
+    <label class="canvas-mini-field">
+      <span>子库类别</span>
+      <select id="canvasAddLibraryCategorySelect"></select>
+    </label>
+    <div class="confirm-modal-note">默认提供“画布库”。如果当前素材库还没有这个子库，添加后会自动创建。</div>
+  </div>
+  <div class="confirm-modal-actions">
+    <button id="canvasAddLibraryCancelButton" class="secondary-button" type="button">取消</button>
+    <button id="canvasAddLibraryConfirmButton" class="primary-button" type="button">添加到素材库</button>
+  </div>
+</dialog>
+
+<dialog id="canvasPreviewModal" class="library-preview-modal canvas-preview-modal">
+  <div class="library-preview-header">
+    <div class="library-preview-copy">
+      <div id="canvasPreviewTitle" class="library-preview-title">图片预览</div>
+      <div id="canvasPreviewMeta" class="library-preview-meta"></div>
+    </div>
+    <button id="canvasPreviewCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="library-preview-body">
+    <img id="canvasPreviewImage" class="library-preview-image" alt="图片预览">
+    <video id="canvasPreviewVideo" class="library-preview-image canvas-preview-video" controls playsinline hidden></video>
+  </div>
+</dialog>
+
+<dialog id="canvasDeleteTaskModal" class="confirm-modal">
+  <div class="confirm-modal-head">
+    <div class="detail-title">删除画布任务</div>
+    <button id="canvasDeleteTaskCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="confirm-modal-body">
+    <div id="canvasDeleteTaskSummary" class="confirm-modal-summary">请选择删除方式</div>
+    <div class="confirm-modal-note">只删除画布任务节点会保留已生成的结果节点、资产包文件和历史任务卡片。删除生成结果会同步删除当前资产包中的生成文件，以及对应的生图/生视频任务卡片。</div>
+  </div>
+  <div class="confirm-modal-actions">
+    <button id="canvasDeleteCanvasOnlyButton" class="secondary-button" type="button">只删除画布任务节点</button>
+    <button id="canvasDeleteWithOutputsButton" class="primary-button danger-action-button" type="button">同时删除生成结果</button>
+  </div>
+</dialog>
+
+<script type="module" src="/static/js/canvas.js?v={{ static_asset_version }}"></script>
+{% endblock %}

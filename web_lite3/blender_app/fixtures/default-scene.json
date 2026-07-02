@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "id": "building-hero",
+      "assetId": "block-building",
+      "name": "Main Block",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1.2, 1, 1]
+      },
+      "visible": true,
+      "material": { "color": "#f2f4f7", "roughness": 0.78 }
+    },
+    {
+      "id": "person-scale",
+      "assetId": "person-whitebox",
+      "name": "Scale Person",
+      "transform": {
+        "position": [1.8, 0, 1.2],
+        "rotation": [0, -0.5, 0],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "material": { "color": "#f2f4f7", "roughness": 0.78 }
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera-main",
+      "name": "Shot Camera",
+      "keyframes": [
+        {
+          "id": "kf-start",
+          "timeSec": 0,
+          "position": [-6, 3.2, 6],
+          "target": [0, 1.3, 0],
+          "fov": 45,
+          "interpolation": "linear",
+          "shotDurationSec": 3,
+          "speedToNext": 1,
+          "curveToNext": "arc-right",
+          "curveStrengthToNext": 0.8
+        },
+        {
+          "id": "kf-end",
+          "timeSec": 5,
+          "position": [4.8, 2.8, 3.5],
+          "target": [0.2, 1.4, -0.6],
+          "fov": 42,
+          "interpolation": "linear",
+          "shotDurationSec": 3,
+          "speedToNext": 1,
+          "curveToNext": "linear",
+          "curveStrengthToNext": 1
+        }
+      ]
+    }
+  ],
+  "activeCameraId": "camera-main",
+  "cameraAimAnchor": {
+    "enabled": false,
+    "position": [0, 1.3, 0],
+    "snapEnabled": true
+  },
+  "lights": [
+    {
+      "id": "light-ambient",
+      "name": "环境柔光",
+      "kind": "ambient",
+      "enabled": true,
+      "intensity": 0.42,
+      "colorTemperature": 6200,
+      "azimuthDeg": 0,
+      "elevationDeg": 90,
+      "distance": 1
+    },
+    {
+      "id": "light-key",
+      "name": "主光",
+      "kind": "directional",
+      "enabled": true,
+      "intensity": 1.15,
+      "colorTemperature": 5600,
+      "azimuthDeg": 42,
+      "elevationDeg": 46,
+      "distance": 9
+    }
+  ],
+  "timeline": { "currentTimeSec": 0, "mode": "motion" },
+  "renderSettings": {
+    "durationSec": 5,
+    "fps": 30,
+    "width": 1280,
+    "height": 720,
+    "format": "mp4"
+  }
+}

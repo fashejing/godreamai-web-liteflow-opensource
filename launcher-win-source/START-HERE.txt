@@ -1,0 +1,14 @@
+GoDreamAI Plus Windows 启动说明
+
+第 1 步：双击 GoDreamAI Plus Launcher.exe
+第 2 步：先点“检测环境”
+第 3 步：如果提示环境缺失，点“一键安装环境”
+第 4 步：安装完成后再点“检测环境”
+第 5 步：看到“环境OK，直接启动”后，点“启动”
+
+说明：
+- runtime 文件夹必须与 GoDreamAI Plus Launcher.exe 放在同一目录
+- 首次点击“一键安装环境”需要联网
+- 启动成功后会自动打开浏览器
+- 如果浏览器没有弹出，可手动打开 http://127.0.0.1:8766/image
+- 如果机器启用了 Clash、系统代理或设置了 http_proxy / https_proxy，请确保 127.0.0.1、localhost 直连

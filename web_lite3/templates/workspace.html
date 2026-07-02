@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% set initial_image_model = page_config.ui.models[0] if page_config.kind == "image" and page_config.ui.models else None %}
+{% set initial_image_ratio = initial_image_model.aspect_ratios[0].value if initial_image_model and initial_image_model.aspect_ratios else "" %}
+{% set initial_image_modes = initial_image_model.modes if initial_image_model and initial_image_model.modes else page_config.ui.modes %}
+{% set initial_video_model = page_config.ui.models[0] if page_config.kind == "video" and page_config.ui.models else None %}
+{% set initial_video_scenes = initial_video_model.scenes if initial_video_model and initial_video_model.scenes else page_config.ui.scenes %}
+
+{% block sidebar_controls %}
+<section class="control-column workspace-sidebar-controls">
+  <div class="inline-fields sidebar-field-list">
+    <label class="field inline-field field-model">
+      <span>模型</span>
+      <select id="modelVariant">
+        {% for model in page_config.models %}
+        <option value="{{ model.value }}">{{ model.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    {% if page_config.kind == "image" %}
+    <label class="field inline-field">
+      <span>模式</span>
+      <select id="imageMode">
+        {% for item in initial_image_modes %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field inline-field">
+      <span>AR</span>
+      <select id="imageAspectRatio">
+        {% if initial_image_model %}
+        {% for item in initial_image_model.aspect_ratios %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+        {% endif %}
+      </select>
+    </label>
+    <label class="field inline-field">
+      <span>尺寸</span>
+      <select id="imageSize">
+        {% if initial_image_model and initial_image_ratio %}
+        {% for item in initial_image_model.size_options_by_ratio[initial_image_ratio] or initial_image_model.size_options %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+        {% endif %}
+      </select>
+    </label>
+    <label class="field inline-field tiny-field">
+      <span>数量</span>
+      <select id="imageCount">
+        {% for count in range(1, 16) %}
+        <option value="{{ count }}">{{ count }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="imageOutputField" class="field inline-field">
+      <span>格式</span>
+      <select id="imageOutputFormat">
+        {% for item in page_config.ui.output_formats %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="imageQualityField" class="field inline-field">
+      <span>清晰度</span>
+      <select id="imageQuality"></select>
+    </label>
+    <label id="imageBackgroundField" class="field inline-field">
+      <span>背景</span>
+      <select id="imageBackground"></select>
+    </label>
+    <label id="imageModerationField" class="field inline-field">
+      <span>安全</span>
+      <select id="imageModeration"></select>
+    </label>
+    <label id="imageCompressionField" class="field inline-field tiny-field">
+      <span>压缩</span>
+      <input id="imageOutputCompression" type="number" min="0" max="100" step="1" value="100">
+    </label>
+    <label class="field toggle-field compact-toggle">
+      <input id="imageSequential" type="checkbox">
+      <span>组图</span>
+    </label>
+    <label id="imageWebSearchField" class="field toggle-field compact-toggle">
+      <input id="imageWebSearch" type="checkbox">
+      <span>联网搜索</span>
+    </label>
+    {% else %}
+    <label class="field inline-field">
+      <span>模式</span>
+      <select id="videoSceneType">
+        {% for item in initial_video_scenes %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field inline-field">
+      <span>分辨率</span>
+      <select id="videoResolution">
+        {% for item in page_config.ui.resolutions %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field inline-field">
+      <span>AR</span>
+      <select id="videoRatio">
+        {% for item in page_config.ui.ratios %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field inline-field">
+      <span>时长</span>
+      <select id="videoDuration">
+        {% for item in page_config.ui.durations %}
+        <option value="{{ item.value }}">{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field inline-field tiny-field">
+      <span>Seed</span>
+      <input id="videoSeed" type="number" value="-1">
+    </label>
+    <label class="field toggle-field compact-toggle">
+      <input id="videoGenerateAudio" type="checkbox" checked>
+      <span>生成音频</span>
+    </label>
+    <label id="videoWebSearchField" class="field toggle-field compact-toggle">
+      <input id="videoWebSearch" type="checkbox">
+      <span>联网搜索</span>
+    </label>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<script id="page-config" type="application/json">{{ page_config | tojson }}</script>
+
+<section class="workspace-page" data-kind="{{ page_config.kind }}">
+  <section class="panel records-panel">
+    <div class="panel-toolbar">
+      <div>
+        <div class="panel-title">任务记录</div>
+        <div id="statusText" class="status-text">等待任务</div>
+      </div>
+      <div class="toolbar-actions">
+        {% if page_config.kind == "image" %}
+        <label class="toolbar-filter">
+          <span>模型类型</span>
+          <select id="imageHistoryModelFilter" aria-label="模型类型">
+            <option value="">全部模型</option>
+            {% for model in page_config.models %}
+            <option value="{{ model.value }}">{{ model.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="toolbar-filter">
+          <span>生成模式</span>
+          <select id="imageHistoryModeFilter" aria-label="生成模式">
+            <option value="">全部模式</option>
+            {% for item in page_config.ui.modes %}
+            <option value="{{ item.value }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% else %}
+        <label class="toolbar-filter">
+          <span>模型类型</span>
+          <select id="videoHistoryModelFilter" aria-label="模型类型">
+            <option value="">全部模型</option>
+            {% for model in page_config.models %}
+            <option value="{{ model.value }}">{{ model.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="toolbar-filter">
+          <span>生成模式</span>
+          <select id="videoHistoryModeFilter" aria-label="生成模式">
+            <option value="">全部模式</option>
+            {% for item in page_config.ui.scenes %}
+            <option value="{{ item.value }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button id="quietModeButton" class="preview-switch toolbar-button" type="button" aria-pressed="false">
+          <span class="preview-switch-track" aria-hidden="true"><span class="preview-switch-thumb"></span></span>
+          <span class="preview-switch-label">动态预览</span>
+        </button>
+        {% endif %}
+        <button id="deleteFailedHistoryButton" class="ghost-button danger-button toolbar-button" type="button">删除失败</button>
+        <button id="refreshHistoryButton" class="ghost-button toolbar-button" type="button">刷新历史</button>
+      </div>
+    </div>
+    <div id="recordsStage" class="records-stage">
+      <div id="recordsTopSpacer" class="records-spacer" aria-hidden="true"></div>
+      <div id="recordsGrid" class="records-grid"></div>
+      <div id="recordsBottomSpacer" class="records-spacer" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section class="panel input-panel">
+    <div class="content-row">
+      <section class="editor-column">
+        <section class="prompt-column">
+          <label class="field prompt-field">
+            <span>提示词</span>
+            <div id="promptComposer" class="prompt-composer">
+              <textarea id="promptInput" rows="8" placeholder="请输入生成提示词，输入 @ 可引用已打标签的图片"></textarea>
+              <div id="promptMirror" class="prompt-mirror" aria-hidden="true"></div>
+              <div id="mentionMenu" class="mention-menu is-hidden"></div>
+            </div>
+          </label>
+
+          {% if page_config.kind == "video" %}
+          <div id="videoReferenceOptions" class="reference-advanced">
+            <button
+              id="videoReferenceOptionsToggle"
+              class="reference-advanced-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="videoReferenceOptionsPanel"
+            >
+              <span>参考视频 / 音频 / 可信素材</span>
+              <span class="reference-advanced-indicator" aria-hidden="true">›</span>
+            </button>
+            <div id="videoReferenceOptionsPanel" class="reference-advanced-panel" hidden>
+              <div class="field">
+                <span>可信素材 Asset URI</span>
+                <textarea id="trustedAssetUris" rows="3" placeholder="每行一个 asset://... 或素材 ID"></textarea>
+              </div>
+              <div class="reference-url-grid">
+                <label class="field">
+                  <span>参考视频 URL</span>
+                  <textarea id="videoReferenceUrls" rows="3" placeholder="每行一个 URL"></textarea>
+                </label>
+                <label class="field">
+                  <span>参考音频 URL</span>
+                  <textarea id="audioReferenceUrls" rows="3" placeholder="每行一个 URL"></textarea>
+                </label>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </section>
+
+        <section id="referencePane" class="reference-pane">
+          <div id="referenceEmptyState" class="reference-empty-state is-hidden">当前模式无需参考素材</div>
+          <section class="asset-stack">
+            {% if page_config.kind == "image" %}
+            <div id="imageReferenceGrid" class="image-reference-grid">
+              <div id="imagePrimaryGroup" class="asset-group">
+                <div class="asset-label">基础图</div>
+                <div class="asset-track">
+                  <button id="imagePrimaryDropzone" class="dropzone single-dropzone" type="button" data-target="imagePrimary">
+                    点击、拖拽或粘贴图片
+                  </button>
+                  <input id="imagePrimaryFile" type="file" accept="image/*" hidden>
+                  <div id="imagePrimaryList" class="asset-list"></div>
+                </div>
+              </div>
+              <div id="imageReferenceGroup" class="asset-group">
+                <div class="asset-label">参考图</div>
+                <div class="asset-track is-reference-track">
+                  <button id="imageReferenceDropzone" class="dropzone" type="button" data-target="imageReferences">
+                    点击、拖拽或粘贴图片
+                  </button>
+                  <input id="imageReferenceFiles" type="file" accept="image/*" hidden multiple>
+                  <div id="imageReferenceList" class="asset-list"></div>
+                </div>
+              </div>
+            </div>
+            {% else %}
+            <div id="videoFirstLastGrid" class="video-first-last-grid">
+              <div id="videoFrameGroup" class="asset-group">
+                <div class="asset-label">首帧</div>
+                <div class="asset-track">
+                  <button id="videoFirstDropzone" class="dropzone single-dropzone" type="button" data-target="videoFirst">
+                    点击、拖拽或粘贴图片
+                  </button>
+                  <input id="videoFirstFile" type="file" accept="image/*" hidden>
+                  <div id="videoFirstList" class="asset-list"></div>
+                </div>
+              </div>
+              <div id="videoLastGroup" class="asset-group">
+                <div class="asset-label">尾帧</div>
+                <div class="asset-track">
+                  <button id="videoLastDropzone" class="dropzone single-dropzone" type="button" data-target="videoLast">
+                    点击、拖拽或粘贴图片
+                  </button>
+                  <input id="videoLastFile" type="file" accept="image/*" hidden>
+                  <div id="videoLastList" class="asset-list"></div>
+                </div>
+              </div>
+            </div>
+            <div id="videoReferenceGroup" class="asset-group">
+              <div class="asset-label">参考图</div>
+              <div class="asset-track is-reference-track">
+                <button id="videoReferenceDropzone" class="dropzone" type="button" data-target="videoReferences">
+                  点击、拖拽或粘贴图片
+                </button>
+                <input id="videoReferenceFiles" type="file" accept="image/*" hidden multiple>
+                <div id="videoReferenceList" class="asset-list"></div>
+              </div>
+            </div>
+            {% endif %}
+          </section>
+        </section>
+      </section>
+    </div>
+    <div class="workspace-input-actions">
+      <button id="generateButton" class="primary-button action-button workspace-action-button" type="button">生成</button>
+      <button id="clearButton" class="ghost-button action-button workspace-action-button" type="button">清空提示</button>
+    </div>
+  </section>
+</section>
+
+<dialog id="deleteTaskModal" class="confirm-modal">
+  <div class="confirm-modal-head">
+    <div class="detail-title">删除任务</div>
+    <button id="deleteTaskCloseButton" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="confirm-modal-body">
+    <div id="deleteTaskSummary" class="confirm-modal-summary">请选择删除方式</div>
+    <div class="confirm-modal-note">删除生成结果仅会清理当前资产包里的生成文件，不会删除上传素材和素材库内容。</div>
+  </div>
+  <div class="confirm-modal-actions">
+    <button id="deleteTaskOnlyButton" class="secondary-button" type="button">仅删除任务卡片</button>
+    <button id="deleteTaskWithOutputsButton" class="primary-button" type="button">删除任务卡片及生成结果</button>
+  </div>
+</dialog>
+
+<script type="module" src="/static/js/workspace.js?v={{ static_asset_version }}"></script>
+{% endblock %}

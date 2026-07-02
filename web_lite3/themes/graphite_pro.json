@@ -1,0 +1,40 @@
+{
+  "name": "Graphite Pro",
+  "type": "dark",
+  "palette": {
+    "brand": {
+      "main": "#A3E635",
+      "hover": "#BEF264",
+      "pressed": "#84CC16",
+      "subtle": "rgba(163, 230, 53, 0.12)"
+    },
+    "semantic": {
+      "success": "#86EFAC",
+      "warning": "#FACC15",
+      "error": "#F87171"
+    },
+    "neutral": {
+      "bg_app": "#0C0D0F",
+      "bg_panel": "rgba(22, 24, 28, 0.94)",
+      "bg_card": "#191B20",
+      "bg_input": "#111318",
+      "bg_sidebar": "#090A0C",
+      "border_subtle": "rgba(229, 231, 235, 0.16)",
+      "border_strong": "rgba(163, 230, 53, 0.42)"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#CBD5E1",
+      "tertiary": "#94A3B8",
+      "disabled": "#64748B",
+      "on_brand": "#111827"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 14,
+    "radius_base": 10,
+    "radius_sm": 7
+  }
+}

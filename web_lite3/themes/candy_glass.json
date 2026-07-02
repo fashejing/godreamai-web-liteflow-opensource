@@ -1,0 +1,40 @@
+{
+  "name": "Candy Glass",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#EC4899",
+      "hover": "#DB2777",
+      "pressed": "#BE185D",
+      "subtle": "rgba(236, 72, 153, 0.1)"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "error": "#E11D48"
+    },
+    "neutral": {
+      "bg_app": "#FFF5FA",
+      "bg_panel": "rgba(255, 255, 255, 0.78)",
+      "bg_card": "#FCE7F3",
+      "bg_input": "#FFF7FB",
+      "bg_sidebar": "#FBCFE8",
+      "border_subtle": "rgba(236, 72, 153, 0.2)",
+      "border_strong": "rgba(14, 165, 233, 0.34)"
+    },
+    "text": {
+      "primary": "#331327",
+      "secondary": "#70435E",
+      "tertiary": "#8F5F79",
+      "disabled": "#C8A2B5",
+      "on_brand": "#FFFFFF"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 22,
+    "radius_base": 16,
+    "radius_sm": 10
+  }
+}

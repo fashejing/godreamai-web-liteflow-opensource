@@ -1,0 +1,40 @@
+{
+  "name": "Sketch Line",
+  "type": "light",
+  "palette": {
+    "brand": {
+      "main": "#243b53",
+      "hover": "#102a43",
+      "pressed": "#0b1f31",
+      "subtle": "rgba(36, 59, 83, 0.1)"
+    },
+    "semantic": {
+      "success": "#2f855a",
+      "warning": "#b7791f",
+      "error": "#c53030"
+    },
+    "neutral": {
+      "bg_app": "#fbf8ef",
+      "bg_panel": "#fffdf6",
+      "bg_card": "#f7f0df",
+      "bg_input": "#fffaf0",
+      "bg_sidebar": "#f4ead7",
+      "border_subtle": "#c9bda8",
+      "border_strong": "#243b53"
+    },
+    "text": {
+      "primary": "#1f2933",
+      "secondary": "#52606d",
+      "tertiary": "#7b8794",
+      "disabled": "#9aa5b1",
+      "on_brand": "#fffdf6"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 10,
+    "radius_base": 7,
+    "radius_sm": 4
+  }
+}

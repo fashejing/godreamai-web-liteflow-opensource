@@ -1,0 +1,40 @@
+{
+  "name": "Deep Ocean",
+  "type": "dark",
+  "palette": {
+    "brand": {
+      "main": "#22D3EE",
+      "hover": "#67E8F9",
+      "pressed": "#0891B2",
+      "subtle": "rgba(34, 211, 238, 0.12)"
+    },
+    "semantic": {
+      "success": "#34D399",
+      "warning": "#FBBF24",
+      "error": "#FB7185"
+    },
+    "neutral": {
+      "bg_app": "#06131F",
+      "bg_panel": "rgba(8, 25, 41, 0.92)",
+      "bg_card": "#0B2438",
+      "bg_input": "#081B2D",
+      "bg_sidebar": "#05111D",
+      "border_subtle": "rgba(125, 211, 252, 0.18)",
+      "border_strong": "rgba(34, 211, 238, 0.4)"
+    },
+    "text": {
+      "primary": "#ECFEFF",
+      "secondary": "#A5F3FC",
+      "tertiary": "#67E8F9",
+      "disabled": "#5D7F91",
+      "on_brand": "#032330"
+    }
+  },
+  "layout": {
+    "height_lg": 40,
+    "height_base": 32,
+    "radius_lg": 18,
+    "radius_base": 12,
+    "radius_sm": 8
+  }
+}
