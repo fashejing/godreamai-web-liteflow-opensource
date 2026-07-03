@@ -6,6 +6,7 @@ from web_lite3.asset_annotations import (
     add_prompt_image_reference_legend,
     compile_prompt_image_aliases,
     compile_prompt_mentions,
+    resolve_asset_annotations,
 )
 
 
@@ -126,3 +127,10 @@ def test_add_prompt_image_reference_legend_normalizes_grid_directive():
         "参考图顺序：图1=金兵，图2=宋兵。\n"
         "单张输出图采用2x2四宫格排版，中国历史纪录片风格，金兵基于图1，宋兵基于图2"
     )
+
+
+def test_resolve_asset_annotations_reports_invalid_reference_without_tag_copy():
+    with pytest.raises(ValueError) as excinfo:
+        resolve_asset_annotations(["asset-a"], [])
+
+    assert str(excinfo.value) == "存在无效图片标签引用"

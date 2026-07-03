@@ -519,7 +519,7 @@ class VideoGenerationService:
         _, storage, history_store, gateway, network_manager, provider = self._resolve_runtime(request.model_variant)
         download_session = network_manager.create_session(provider)
         resolved_annotations = []
-        if request.scene_type == "multimodal_reference":
+        if request.scene_type == "multimodal_reference" and "@" in str(request.prompt or ""):
             resolved_annotations = resolve_asset_annotations(
                 _video_request_asset_ids(request),
                 [item.model_dump() for item in request.asset_annotations],

@@ -2220,10 +2220,6 @@ function validateCurrentRequest(params) {
   if (kind === "video" && params.scene_type !== "multimodal_reference" && (mentions.length || mentionScan.unknown.length)) {
     throw new Error("当前模式不支持 @ 引用素材");
   }
-  const activeAssets = getActiveImageAssets();
-  if (activeAssets.some((asset) => !asset.tag_category)) {
-    throw new Error("漏打标签");
-  }
   const labelSet = new Set();
   for (const item of deriveAssetLabels().values()) {
     labelSet.add(item.tag_label);
@@ -3422,7 +3418,6 @@ function availableMentionCatalog() {
   if (cacheKey === state.mentionCacheKey) {
     return state.mentionCacheValue;
   }
-  const activeAssets = getActiveImageAssets();
   const order = currentAssetTagCategories();
   const groups = new Map(order.map((category) => [category, []]));
   for (const item of [...activeMentionItems(), ...libraryMentionItems()]) {
@@ -3441,7 +3436,7 @@ function availableMentionCatalog() {
   if (!totalItems) {
     state.mentionCacheKey = cacheKey;
     state.mentionCacheValue = {
-      error: activeAssets.some((asset) => !asset.tag_category) ? "漏打标签" : "当前没有可引用图片",
+      error: null,
       categories: [],
     };
     return state.mentionCacheValue;

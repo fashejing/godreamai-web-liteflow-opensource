@@ -147,7 +147,7 @@ def resolve_asset_annotations(
 
     missing = [asset_id for asset_id in requested if asset_id not in annotation_map]
     if missing:
-        raise ValueError("漏打标签")
+        raise ValueError("存在无效图片标签引用")
 
     counters: dict[str, int] = {}
     resolved: list[dict[str, Any]] = []
