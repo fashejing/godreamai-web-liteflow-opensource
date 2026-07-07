@@ -22,6 +22,19 @@
         </select>
       </label>
       <label class="field">
+        <span>Kling API Key</span>
+        <input id="klingApiKey" type="password" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>历史 Key</span>
+        <select id="klingApiKeyHistorySelect">
+          <option value="">选择已保存的 Key</option>
+          {% for item in page_config.masked_api_key_history.kling %}
+          <option value="{{ item.value }}">{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
         <span>资产存储目录</span>
         <div class="inline-picker">
           <input id="storageDir" type="text">
@@ -61,11 +74,12 @@
       <div class="subpanel-head">
         <div>
           <div class="panel-title">VPN 状态助手</div>
-          <div class="section-label">开源版仅检测火山引擎，通常需要关闭 VPN 后直连</div>
+          <div class="section-label">火山引擎和可灵中国大陆接口通常直连</div>
         </div>
         <button id="apiNetworkCheckButton" class="secondary-button" type="button">检测连通性</button>
       </div>
       <input id="volcengineNetworkMode" type="hidden" value="direct">
+      <input id="klingNetworkMode" type="hidden" value="direct">
       <input id="apiNetworkAutoSwitch" type="hidden" value="true">
       <input id="apiProxyUrl" type="hidden" value="">
       <div id="apiNetworkStatus" class="network-status-list"></div>
@@ -114,6 +128,7 @@
 
   <section class="panel company-panel">
     <div class="panel-title">开发信息</div>
+    <div class="company-copy">版本 {{ app_release_version }}</div>
     <div class="company-copy">©井鸽（成都）人工智能科技有限公司 2026</div>
     <a class="company-link" href="https://www.wellpigeon.com" target="_blank" rel="noopener">www.wellpigeon.com</a>
     <div class="company-copy">联络微信：fashejing</div>

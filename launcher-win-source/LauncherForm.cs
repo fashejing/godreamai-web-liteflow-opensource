@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace GoDreamAILauncher.Win;
@@ -11,7 +13,14 @@ internal sealed class LauncherForm : Form
 {
     private const string ManagedRuntimeDirectoryPrefix = "runtime-";
     private const int RuntimeStampLength = 12;
-    private const string LauncherVersionText = "v13.11-blender-Dual";
+    private static readonly string LauncherVersionText = DisplayLauncherVersion(
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion ?? "dev"
+    );
+    private const string LauncherModelSummary =
+        "生图：Seedream 5.0 Lite / Seedream 4.5 / Kling Image 3.0 / Kling Image 3.0 Omni\r\n" +
+        "生视频：Seedance 2.0 / Seedance 2.0 Fast / Kling 3.0 Turbo / Kling 3.0 Omni";
 
     private sealed record BackendResult(
         bool ok,
@@ -26,12 +35,23 @@ internal sealed class LauncherForm : Form
     private readonly Button checkButton = new() { Text = "检测环境", Width = 144, Height = 38 };
     private readonly Button launchButton = new() { Text = "启动", Width = 144, Height = 38, Enabled = false };
     private readonly Button installButton = new() { Text = "一键安装环境", Width = 168, Height = 38, Visible = false };
-    private readonly Label statusLabel = new() { AutoSize = false, Width = 420, Height = 44 };
-    private readonly Label detailLabel = new() { AutoSize = false, Width = 420, Height = 88 };
+    private readonly Label statusLabel = new() { AutoSize = false, Width = 500, Height = 44 };
+    private readonly Label detailLabel = new() { AutoSize = false, Width = 500, Height = 80 };
     private readonly ProgressBar activityBar = new() { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 28, Visible = false, Width = 180, Height = 8 };
 
     private bool desiredLaunchEnabled;
     private bool desiredInstallVisible;
+
+    private static string DisplayLauncherVersion(string value)
+    {
+        var trimmed = value.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return "dev";
+        }
+        var match = Regex.Match(trimmed, @"^v?\d+(?:\.\d+){1,2}");
+        return match.Success ? match.Value : trimmed;
+    }
 
     public LauncherForm()
     {
@@ -40,7 +60,7 @@ internal sealed class LauncherForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
-        ClientSize = new Size(500, 360);
+        ClientSize = new Size(560, 524);
         Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
 
         BuildWindow();
@@ -51,10 +71,10 @@ internal sealed class LauncherForm : Form
     {
         var titleLabel = new Label
         {
-            Text = "井鸽AI影视套件",
+            Text = "井鸽启动器",
             Font = new Font("Segoe UI", 24F, FontStyle.Bold, GraphicsUnit.Point),
             AutoSize = false,
-            Size = new Size(420, 50),
+            Size = new Size(500, 50),
             Location = new Point(24, 24),
         };
 
@@ -64,22 +84,52 @@ internal sealed class LauncherForm : Form
             Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point),
             ForeColor = SystemColors.GrayText,
             AutoSize = false,
-            Size = new Size(420, 24),
+            Size = new Size(500, 24),
+            Location = new Point(24, 96),
+        };
+
+        var subtitleLabel = new Label
+        {
+            Text = "AI视频创作套件",
+            Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point),
+            ForeColor = SystemColors.GrayText,
+            AutoSize = false,
+            Size = new Size(500, 24),
             Location = new Point(24, 72),
         };
 
+        var modelsTitleLabel = new Label
+        {
+            Text = "可调用模型",
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point),
+            ForeColor = SystemColors.GrayText,
+            AutoSize = false,
+            Size = new Size(500, 20),
+            Location = new Point(24, 132),
+        };
+
+        var modelsLabel = new Label
+        {
+            Text = LauncherModelSummary,
+            Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point),
+            ForeColor = SystemColors.GrayText,
+            AutoSize = false,
+            Size = new Size(500, 56),
+            Location = new Point(24, 154),
+        };
+
         statusLabel.Font = new Font("Segoe UI", 15F, FontStyle.Bold, GraphicsUnit.Point);
-        statusLabel.Location = new Point(24, 106);
+        statusLabel.Location = new Point(24, 226);
 
         detailLabel.Font = new Font("Segoe UI", 11F, FontStyle.Regular, GraphicsUnit.Point);
         detailLabel.ForeColor = SystemColors.GrayText;
-        detailLabel.Location = new Point(24, 148);
+        detailLabel.Location = new Point(24, 270);
         detailLabel.Visible = false;
 
-        checkButton.Location = new Point(24, 214);
-        launchButton.Location = new Point(180, 214);
-        installButton.Location = new Point(24, 260);
-        activityBar.Location = new Point(24, 266);
+        checkButton.Location = new Point(24, 356);
+        launchButton.Location = new Point(180, 356);
+        installButton.Location = new Point(24, 402);
+        activityBar.Location = new Point(24, 408);
 
         checkButton.Click += async (_, _) => await RunBackendAsync("check", "正在检测环境…");
         installButton.Click += async (_, _) => await RunBackendAsync("install", "正在安装环境，请稍候…");
@@ -91,7 +141,7 @@ internal sealed class LauncherForm : Form
             Font = new Font("Segoe UI", 11F, FontStyle.Regular, GraphicsUnit.Point),
             ForeColor = SystemColors.GrayText,
             AutoSize = true,
-            Location = new Point(24, 300),
+            Location = new Point(24, 454),
         };
 
         var websiteLabel = new LinkLabel
@@ -99,7 +149,7 @@ internal sealed class LauncherForm : Form
             Text = "www.wellpigeon.com",
             Font = new Font("Segoe UI", 11F, FontStyle.Regular, GraphicsUnit.Point),
             AutoSize = true,
-            Location = new Point(24, 322),
+            Location = new Point(24, 476),
         };
         websiteLabel.LinkClicked += (_, _) =>
         {
@@ -116,13 +166,16 @@ internal sealed class LauncherForm : Form
             Font = new Font("Segoe UI", 11F, FontStyle.Regular, GraphicsUnit.Point),
             ForeColor = SystemColors.GrayText,
             AutoSize = true,
-            Location = new Point(24, 344),
+            Location = new Point(24, 498),
         };
 
         Controls.AddRange(
         [
             titleLabel,
+            subtitleLabel,
             versionLabel,
+            modelsTitleLabel,
+            modelsLabel,
             statusLabel,
             detailLabel,
             checkButton,

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import re
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -8,6 +11,9 @@ APP_BRAND_TITLE_EMPHASIS = "井鸽"
 APP_BRAND_TITLE_REST = "AI影视套件"
 APP_BRAND_EDITION = "开源版"
 APP_BRAND_SUBTITLE = "WebUI"
+APP_BRAND_SIDEBAR_TITLE = "井鸽启动器"
+APP_BRAND_SIDEBAR_TITLE_EMPHASIS = "井鸽"
+APP_BRAND_SIDEBAR_TITLE_REST = "启动器"
 APP_BRAND_SIDEBAR_SUBTITLE = f"{APP_BRAND_EDITION}{APP_BRAND_SUBTITLE}"
 APP_DISPLAY_NAME = f"{APP_BRAND_TITLE} {APP_BRAND_SUBTITLE}"
 APP_NAME = APP_DISPLAY_NAME
@@ -15,6 +21,26 @@ APP_HEALTH_NAME = APP_DISPLAY_NAME
 APP_HOME_ENV = "GODREAMAI_PLUS_HOME"
 APP_HOME_DEFAULT_DIRNAME = ".godreamai-plus"
 
+
+def release_version_from_env(env: Mapping[str, str] | None = None) -> str:
+    source = env or os.environ
+    for key in ("GODREAMAI_RELEASE_VERSION", "GITHUB_REF_NAME"):
+        value = source.get(key, "").strip()
+        if value:
+            return value
+    return "dev"
+
+
+def display_release_version(version: str | None = None) -> str:
+    resolved = (APP_RELEASE_VERSION if version is None else version).strip()
+    if not resolved:
+        return "dev"
+    match = re.match(r"^v?\d+(?:\.\d+){1,2}", resolved)
+    return match.group(0) if match else resolved
+
+
+APP_RELEASE_VERSION = release_version_from_env()
+APP_DISPLAY_RELEASE_VERSION = display_release_version(APP_RELEASE_VERSION)
 APP_LAUNCHER_RUNTIME_DIRNAME = "GoDreamAI Plus Launcher"
 APP_WINDOWS_LAUNCHER_NAME = APP_LAUNCHER_RUNTIME_DIRNAME
 APP_WINDOWS_LAUNCHER_EXE = f"{APP_WINDOWS_LAUNCHER_NAME}.exe"
@@ -76,8 +102,13 @@ SEEDREAM_IMAGE_MODE_LABELS = {
     "reference_only": "参考图",
     "multi_image": "多图融合",
 }
+KLING_IMAGE_MODE_LABELS = {
+    "text_only": "文生图",
+    "reference_only": "图生图",
+}
 IMAGE_MODE_LABELS = {
     **SEEDREAM_IMAGE_MODE_LABELS,
+    **KLING_IMAGE_MODE_LABELS,
 }
 IMAGE_STATS_MODE_LABELS = IMAGE_MODE_LABELS
 
@@ -95,11 +126,16 @@ def _repeat_size_options(ratios: list[str], options: list[dict[str, str]]) -> di
 
 
 SEEDREAM_IMAGE_MODES = list(SEEDREAM_IMAGE_MODE_LABELS.keys())
+KLING_IMAGE_MODES = list(KLING_IMAGE_MODE_LABELS.keys())
 DEFAULT_IMAGE_MODEL_VARIANT = "seedream_v5_0"
 
 SEEDREAM_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"]
+KLING_IMAGE_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9"]
+KLING_IMAGE_OMNI_ASPECT_RATIOS = [*KLING_IMAGE_ASPECT_RATIOS, "auto"]
 SEEDREAM_5_SIZE_OPTIONS = [_option("2K"), _option("3K"), _option("4K")]
 SEEDREAM_4_5_SIZE_OPTIONS = [_option("2K"), _option("4K")]
+KLING_IMAGE_3_SIZE_OPTIONS = [_option("1k", "1K"), _option("2k", "2K")]
+KLING_IMAGE_3_OMNI_SIZE_OPTIONS = [_option("1k", "1K"), _option("2k", "2K"), _option("4k", "4K")]
 SEEDREAM_MAX_INPUT_IMAGES = 14
 SEEDREAM_MAX_TOTAL_IMAGES = 15
 SEEDREAM_MIN_TOTAL_PIXELS = 2560 * 1440
@@ -153,8 +189,55 @@ SEEDANCE_VIDEO_SCENE_LABELS = {
     "first_last": "首尾帧图生视频",
     "multimodal_reference": "多模态参考生视频",
 }
+KLING_VIDEO_SCENE_LABELS = {
+    "text_only": "文生视频",
+    "first_frame": "图生视频",
+    "first_last": "图生视频（首帧+尾帧）",
+}
 
 IMAGE_MODELS = {
+    "kling_image_v3": {
+        "label": "Kling Image 3.0",
+        "provider": "kling",
+        "api_model_id": "kling-v3",
+        "supported_modes": KLING_IMAGE_MODES,
+        "mode_labels": KLING_IMAGE_MODE_LABELS,
+        "aspect_ratios": KLING_IMAGE_ASPECT_RATIOS,
+        "default_aspect_ratio": "16:9",
+        "default_size": "2k",
+        "size_options": KLING_IMAGE_3_SIZE_OPTIONS,
+        "size_options_by_ratio": _repeat_size_options(KLING_IMAGE_ASPECT_RATIOS, KLING_IMAGE_3_SIZE_OPTIONS),
+        "supports_web_search": False,
+        "supports_output_format": False,
+        "supports_sequential_generation": False,
+        "max_input_images": 1,
+        "max_count": 9,
+        "default_output_format": "jpeg",
+        "output_formats": [
+            _option("jpeg", "JPEG"),
+        ],
+    },
+    "kling_image_v3_omni": {
+        "label": "Kling Image 3.0 Omni",
+        "provider": "kling",
+        "api_model_id": "kling-v3-omni",
+        "supported_modes": KLING_IMAGE_MODES,
+        "mode_labels": KLING_IMAGE_MODE_LABELS,
+        "aspect_ratios": KLING_IMAGE_OMNI_ASPECT_RATIOS,
+        "default_aspect_ratio": "auto",
+        "default_size": "2k",
+        "size_options": KLING_IMAGE_3_OMNI_SIZE_OPTIONS,
+        "size_options_by_ratio": _repeat_size_options(KLING_IMAGE_OMNI_ASPECT_RATIOS, KLING_IMAGE_3_OMNI_SIZE_OPTIONS),
+        "supports_web_search": False,
+        "supports_output_format": False,
+        "supports_sequential_generation": False,
+        "max_input_images": 10,
+        "max_count": 9,
+        "default_output_format": "jpeg",
+        "output_formats": [
+            _option("jpeg", "JPEG"),
+        ],
+    },
     "seedream_v5_0": {
         "label": "Seedream 5.0 Lite",
         "provider": "volcengine",
@@ -287,6 +370,34 @@ VIDEO_MODELS = {
         "supports_trusted_assets": True,
         "pricing_hint": VIDEO_PRICING_HINT,
     },
+    "kling_3_0_turbo": {
+        "label": "Kling 3.0 Turbo",
+        "provider": "kling",
+        "api_model_id": "kling-3.0-turbo",
+        "supported_scenes": ["text_only", "first_frame"],
+        "scene_labels": KLING_VIDEO_SCENE_LABELS,
+        "supported_resolutions": ["720p", "1080p"],
+        "supported_ratios": ["16:9", "9:16", "1:1"],
+        "supported_durations": list(range(3, 16)),
+        "supports_audio": False,
+        "supports_web_search": False,
+        "supports_watermark": True,
+        "supports_trusted_assets": False,
+    },
+    "kling_3_0_omni": {
+        "label": "Kling 3.0 Omni",
+        "provider": "kling",
+        "api_model_id": "kling-v3-omni",
+        "supported_scenes": ["text_only", "first_frame", "first_last"],
+        "scene_labels": KLING_VIDEO_SCENE_LABELS,
+        "supported_resolutions": ["720p", "1080p", "4k"],
+        "supported_ratios": ["16:9", "9:16", "1:1"],
+        "supported_durations": list(range(3, 16)),
+        "supports_audio": True,
+        "supports_web_search": False,
+        "supports_watermark": True,
+        "supports_trusted_assets": False,
+    },
 }
 
 VIDEO_RESOLUTION_SCENE_SUPPORT = {
@@ -318,7 +429,7 @@ VIDEO_RATIO_OPTIONS = [
     _option("21:9"),
 ]
 
-VIDEO_DURATION_OPTIONS = [{"value": second, "label": f"{second} 秒"} for second in range(4, 16)]
+VIDEO_DURATION_OPTIONS = [{"value": second, "label": f"{second} 秒"} for second in range(3, 16)]
 
 OUTPUT_FORMAT_OPTIONS = [
     _option("jpeg", "JPEG"),
@@ -369,10 +480,12 @@ RECORD_CARD_SIZE_OPTIONS = [
 
 IMAGE_PROVIDER_API_KEY_FIELDS = {
     "volcengine": "volcengine_api_key",
+    "kling": "kling_api_key",
 }
 
 VIDEO_PROVIDER_API_KEY_FIELDS = {
     "volcengine": "volcengine_api_key",
+    "kling": "kling_api_key",
 }
 
 
@@ -407,6 +520,8 @@ def video_scene_label(scene_key: str, *, model_variant: str | None = None, provi
             VIDEO_SCENES.get(normalized_key, normalized_key),
         )
     normalized_provider = str(provider or "").strip()
+    if normalized_provider == "kling":
+        return KLING_VIDEO_SCENE_LABELS.get(normalized_key, VIDEO_SCENES.get(normalized_key, normalized_key))
     if normalized_provider == "volcengine":
         return SEEDANCE_VIDEO_SCENE_LABELS.get(normalized_key, VIDEO_SCENES.get(normalized_key, normalized_key))
     return VIDEO_SCENES.get(normalized_key, normalized_key)
@@ -428,6 +543,8 @@ def image_mode_label(mode_key: str, *, model_variant: str | None = None, provide
     if model_variant and model_variant in IMAGE_MODELS:
         return image_mode_labels_for_model(model_variant).get(normalized_key, normalized_key)
     normalized_provider = str(provider or "").strip()
+    if normalized_provider == "kling":
+        return KLING_IMAGE_MODE_LABELS.get(normalized_key, normalized_key)
     if normalized_provider == "volcengine":
         return SEEDREAM_IMAGE_MODE_LABELS.get(normalized_key, normalized_key)
     return IMAGE_MODE_LABELS.get(normalized_key, normalized_key)

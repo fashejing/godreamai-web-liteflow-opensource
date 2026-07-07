@@ -4,7 +4,29 @@ import Foundation
 private let commonRuntimeDirectoryName = "common"
 private let arm64RuntimeDirectoryName = "macos-arm64"
 private let x86RuntimeDirectoryName = "macos-x86_64"
-private let launcherVersionText = "v13.11-blender-Dual"
+private func displayLauncherVersion(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+        return "dev"
+    }
+    if let range = trimmed.range(of: #"^v?\d+(?:\.\d+){1,2}"#, options: .regularExpression) {
+        return String(trimmed[range])
+    }
+    return trimmed
+}
+private let launcherVersionText: String = {
+    if let value = Bundle.main.object(forInfoDictionaryKey: "GoDreamAIReleaseVersion") as? String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return displayLauncherVersion(trimmed)
+        }
+    }
+    return "dev"
+}()
+private let launcherModelSummary = """
+生图：Seedream 5.0 Lite / Seedream 4.5 / Kling Image 3.0 / Kling Image 3.0 Omni
+生视频：Seedance 2.0 / Seedance 2.0 Fast / Kling 3.0 Turbo / Kling 3.0 Omni
+"""
 
 struct BackendResult: Decodable {
     let ok: Bool
@@ -60,7 +82,7 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildWindow() {
-        let frame = NSRect(x: 0, y: 0, width: 468, height: 332)
+        let frame = NSRect(x: 0, y: 0, width: 548, height: 432)
         window = NSWindow(
             contentRect: frame,
             styleMask: [.titled, .closable, .miniaturizable],
@@ -76,18 +98,37 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         window.contentView = content
 
-        let titleLabel = NSTextField(labelWithString: "井鸽AI影视套件")
+        let titleLabel = NSTextField(labelWithString: "井鸽启动器")
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
         titleLabel.textColor = .labelColor
+
+        let subtitleLabel = NSTextField(labelWithString: "AI视频创作套件")
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        subtitleLabel.textColor = .secondaryLabelColor
 
         let versionLabel = NSTextField(labelWithString: "版本 \(launcherVersionText)")
         versionLabel.font = .systemFont(ofSize: 12, weight: .medium)
         versionLabel.textColor = .secondaryLabelColor
 
-        let titleGroup = NSStackView(views: [titleLabel, versionLabel])
+        let titleGroup = NSStackView(views: [titleLabel, subtitleLabel, versionLabel])
         titleGroup.orientation = .vertical
         titleGroup.alignment = .leading
         titleGroup.spacing = 4
+
+        let modelsTitleLabel = NSTextField(labelWithString: "可调用模型")
+        modelsTitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        modelsTitleLabel.textColor = .secondaryLabelColor
+
+        let modelsLabel = NSTextField(wrappingLabelWithString: launcherModelSummary)
+        modelsLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        modelsLabel.textColor = .secondaryLabelColor
+        modelsLabel.maximumNumberOfLines = 3
+        modelsLabel.lineBreakMode = .byWordWrapping
+
+        let modelsGroup = NSStackView(views: [modelsTitleLabel, modelsLabel])
+        modelsGroup.orientation = .vertical
+        modelsGroup.alignment = .leading
+        modelsGroup.spacing = 3
 
         statusLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         statusLabel.maximumNumberOfLines = 2
@@ -132,10 +173,10 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         brandFooter.alignment = .leading
         brandFooter.spacing = 2
 
-        let stack = NSStackView(views: [titleGroup, statusLabel, detailLabel, primaryButtons, installButton, footerRow, NSView(), brandFooter])
+        let stack = NSStackView(views: [titleGroup, modelsGroup, statusLabel, detailLabel, primaryButtons, installButton, footerRow, NSView(), brandFooter])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 16
+        stack.spacing = 14
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         content.addSubview(stack)

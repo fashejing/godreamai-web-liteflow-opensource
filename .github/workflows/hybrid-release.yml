@@ -1,0 +1,405 @@
+name: Build Hybrid Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: true
+
+  build-windows-launcher:
+    needs: prepare-release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Run launcher backend tests
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pytest -q tests/test_launcher_backend.py tests/test_runtime_packaging.py -k "not macos"
+
+      - name: Build Windows release package
+        shell: bash
+        run: |
+          python scripts/build_windows_release.py
+
+      - name: Smoke test offline install and launch
+        shell: bash
+        run: |
+          python - <<'PY'
+          import shutil, zipfile
+          from pathlib import Path
+          archive = Path("dist/GoDreamAI-Plus-Windows.zip")
+          out_dir = Path(".launcher-build/windows-smoke")
+          if out_dir.exists():
+              shutil.rmtree(out_dir)
+          out_dir.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(archive) as handle:
+              handle.extractall(out_dir)
+          print(f"Extracted {archive} -> {out_dir}")
+          PY
+          export GODREAMAI_LAUNCHER_SKIP_BROWSER=1
+          export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
+          export no_proxy="$NO_PROXY"
+          .launcher-build/windows-smoke/runtime/python/python.exe .launcher-build/windows-smoke/runtime/scripts/launcher_backend.py install
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          root = Path(".launcher-build/windows-smoke/runtime")
+          ffmpeg = root / "ffmpeg" / "bin" / "ffmpeg.exe"
+          ffprobe = root / "ffmpeg" / "bin" / "ffprobe.exe"
+          assert ffmpeg.exists(), ffmpeg
+          assert ffprobe.exists(), ffprobe
+          subprocess.run([str(ffmpeg), "-version"], check=True)
+          subprocess.run([str(ffprobe), "-version"], check=True)
+          PY
+          .launcher-build/windows-smoke/runtime/python/python.exe .launcher-build/windows-smoke/runtime/scripts/launcher_backend.py check
+          .launcher-build/windows-smoke/runtime/python/python.exe .launcher-build/windows-smoke/runtime/scripts/launcher_backend.py launch
+          python - <<'PY'
+          from pathlib import Path
+          marker = "Uvicorn running on http://127.0.0.1:8766"
+          log_file = Path(".launcher-build/windows-smoke/runtime/.launcher-runtime/server.log")
+          content = log_file.read_text(encoding="utf-8", errors="ignore")
+          assert marker in content, content[-2000:]
+          print({"ok": True, "server_log": marker})
+          PY
+
+      - name: Upload Windows release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp dist/GoDreamAI-Plus-Windows.zip "dist/GoDreamAI-Plus-Windows-${GITHUB_REF_NAME}.zip"
+          gh release upload "${GITHUB_REF_NAME}" "dist/GoDreamAI-Plus-Windows-${GITHUB_REF_NAME}.zip" --clobber -R "${GITHUB_REPOSITORY}"
+
+  build-macos-payload-arm64:
+    needs: prepare-release
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      - name: Build arm64 payload
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python scripts/build_macos_release.py payload --target macos-arm64 --output-dir .launcher-build/macos-payloads/macos-arm64
+
+      - name: Smoke test arm64 payload
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from scripts.runtime_packaging import build_common_runtime, stage_flat_runtime
+          root = Path(".")
+          common_dir = Path(".launcher-build/macos-smoke/common")
+          payload_dir = Path(".launcher-build/macos-payloads/macos-arm64")
+          runtime_dir = Path(".launcher-build/macos-smoke/runtime")
+          build_common_runtime(root, common_dir)
+          stage_flat_runtime(common_dir, payload_dir, runtime_dir)
+          print(runtime_dir)
+          PY
+          export GODREAMAI_LAUNCHER_SKIP_BROWSER=1
+          export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
+          export no_proxy="$NO_PROXY"
+          .launcher-build/macos-smoke/runtime/python/bin/python3.11 .launcher-build/macos-smoke/runtime/scripts/launcher_backend.py install
+          .launcher-build/macos-smoke/runtime/python/bin/python3.11 .launcher-build/macos-smoke/runtime/scripts/launcher_backend.py check
+          .launcher-build/macos-smoke/runtime/python/bin/python3.11 .launcher-build/macos-smoke/runtime/scripts/launcher_backend.py launch
+          python - <<'PY'
+          import json, time, urllib.request
+          from pathlib import Path
+          import subprocess
+          root = Path(".launcher-build/macos-smoke/runtime")
+          ffmpeg = root / "ffmpeg" / "bin" / "ffmpeg"
+          ffprobe = root / "ffmpeg" / "bin" / "ffprobe"
+          assert ffmpeg.exists(), ffmpeg
+          assert ffprobe.exists(), ffprobe
+          subprocess.run([str(ffmpeg), "-version"], check=True)
+          subprocess.run([str(ffprobe), "-version"], check=True)
+          url = "http://127.0.0.1:8766/api/health"
+          deadline = time.time() + 15
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=1) as response:
+                      payload = json.load(response)
+                  assert payload.get("ok") is True
+                  assert isinstance(payload.get("app"), str) and payload.get("app")
+                  assert payload.get("runtime_id")
+                  print(payload)
+                  break
+              except Exception:
+                  time.sleep(0.5)
+          else:
+              raise SystemExit(f"health probe failed: {url}")
+          PY
+
+      - name: Archive arm64 payload artifact
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from scripts.runtime_packaging import write_tar_gz_from_directory
+          archive = write_tar_gz_from_directory(
+              Path(".launcher-build/macos-payloads/macos-arm64"),
+              Path("dist/GoDreamAI-Plus-macOS-payload-arm64.tar.gz"),
+              arcname="macos-arm64",
+          )
+          print(archive)
+          PY
+
+      - name: Upload arm64 payload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/GoDreamAI-Plus-macOS-payload-arm64.tar.gz --clobber -R "${GITHUB_REPOSITORY}"
+
+  build-macos-payload-x86_64:
+    needs: prepare-release
+    runs-on: macos-15-intel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      - name: Build x86_64 payload
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python scripts/build_macos_release.py payload --target macos-x86_64 --output-dir .launcher-build/macos-payloads/macos-x86_64
+
+      - name: Smoke test x86_64 payload
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from scripts.runtime_packaging import build_common_runtime, stage_flat_runtime
+          root = Path(".")
+          common_dir = Path(".launcher-build/macos-smoke/common")
+          payload_dir = Path(".launcher-build/macos-payloads/macos-x86_64")
+          runtime_dir = Path(".launcher-build/macos-smoke/runtime")
+          build_common_runtime(root, common_dir)
+          stage_flat_runtime(common_dir, payload_dir, runtime_dir)
+          print(runtime_dir)
+          PY
+          export GODREAMAI_LAUNCHER_SKIP_BROWSER=1
+          export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
+          export no_proxy="$NO_PROXY"
+          .launcher-build/macos-smoke/runtime/python/bin/python3.11 .launcher-build/macos-smoke/runtime/scripts/launcher_backend.py install
+          .launcher-build/macos-smoke/runtime/python/bin/python3.11 .launcher-build/macos-smoke/runtime/scripts/launcher_backend.py check
+          .launcher-build/macos-smoke/runtime/python/bin/python3.11 .launcher-build/macos-smoke/runtime/scripts/launcher_backend.py launch
+          python - <<'PY'
+          import json, time, urllib.request
+          from pathlib import Path
+          import subprocess
+          root = Path(".launcher-build/macos-smoke/runtime")
+          ffmpeg = root / "ffmpeg" / "bin" / "ffmpeg"
+          ffprobe = root / "ffmpeg" / "bin" / "ffprobe"
+          assert ffmpeg.exists(), ffmpeg
+          assert ffprobe.exists(), ffprobe
+          subprocess.run([str(ffmpeg), "-version"], check=True)
+          subprocess.run([str(ffprobe), "-version"], check=True)
+          url = "http://127.0.0.1:8766/api/health"
+          deadline = time.time() + 15
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=1) as response:
+                      payload = json.load(response)
+                  assert payload.get("ok") is True
+                  assert isinstance(payload.get("app"), str) and payload.get("app")
+                  assert payload.get("runtime_id")
+                  print(payload)
+                  break
+              except Exception:
+                  time.sleep(0.5)
+          else:
+              raise SystemExit(f"health probe failed: {url}")
+          PY
+
+      - name: Archive x86_64 payload artifact
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from scripts.runtime_packaging import write_tar_gz_from_directory
+          archive = write_tar_gz_from_directory(
+              Path(".launcher-build/macos-payloads/macos-x86_64"),
+              Path("dist/GoDreamAI-Plus-macOS-payload-x86_64.tar.gz"),
+              arcname="macos-x86_64",
+          )
+          print(archive)
+          PY
+
+      - name: Upload x86_64 payload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/GoDreamAI-Plus-macOS-payload-x86_64.tar.gz --clobber -R "${GITHUB_REPOSITORY}"
+
+  build-macos-release:
+    needs:
+      - prepare-release
+      - build-macos-payload-arm64
+      - build-macos-payload-x86_64
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run macOS packaging tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pytest -q tests/test_build_macos_release.py tests/test_launcher_backend.py tests/test_runtime_packaging.py
+
+      - name: Download arm64 payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .launcher-build/downloads/arm64
+          gh release download "${GITHUB_REF_NAME}" --pattern "GoDreamAI-Plus-macOS-payload-arm64.tar.gz" --dir .launcher-build/downloads/arm64 -R "${GITHUB_REPOSITORY}"
+
+      - name: Download x86_64 payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .launcher-build/downloads/x86_64
+          gh release download "${GITHUB_REF_NAME}" --pattern "GoDreamAI-Plus-macOS-payload-x86_64.tar.gz" --dir .launcher-build/downloads/x86_64 -R "${GITHUB_REPOSITORY}"
+
+      - name: Extract payload archives
+        run: |
+          mkdir -p .launcher-build/macos-payloads
+          tar -xzf .launcher-build/downloads/arm64/GoDreamAI-Plus-macOS-payload-arm64.tar.gz -C .launcher-build/macos-payloads
+          tar -xzf .launcher-build/downloads/x86_64/GoDreamAI-Plus-macOS-payload-x86_64.tar.gz -C .launcher-build/macos-payloads
+
+      - name: Assemble Universal2 macOS release
+        run: |
+          python scripts/build_macos_release.py assemble \
+            --arm64-payload-dir .launcher-build/macos-payloads/macos-arm64 \
+            --x86_64-payload-dir .launcher-build/macos-payloads/macos-x86_64
+
+      - name: Validate assembled bundle layout and final zip
+        run: |
+          python - <<'PY'
+          import os
+          import shutil
+          import stat
+          import subprocess
+          from pathlib import Path
+
+          def assert_executable(path: Path) -> None:
+              assert path.exists(), path
+              assert os.access(path, os.X_OK), f"{path} is not executable"
+              assert stat.S_IMODE(path.stat().st_mode) == 0o755, oct(stat.S_IMODE(path.stat().st_mode))
+
+          bundle = Path("dist/GoDreamAI Plus.app")
+          assert bundle.exists(), bundle
+          assert_executable(bundle / "Contents" / "MacOS" / "GoDreamAI Plus")
+          assert (bundle / "Contents" / "Resources" / "runtime" / "common" / "web_lite3").exists()
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "python" / "bin" / "python3.11")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "python" / "bin" / "python3")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "ffmpeg" / "bin" / "ffmpeg")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "ffmpeg" / "bin" / "ffprobe")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "python" / "bin" / "python3.11")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "python" / "bin" / "python3")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "ffmpeg" / "bin" / "ffmpeg")
+          assert_executable(bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "ffmpeg" / "bin" / "ffprobe")
+          archive = Path("dist/GoDreamAI-Plus-macOS.zip")
+          assert archive.exists(), archive
+          unzip_dir = Path(".launcher-build/macos-zip-verify")
+          if unzip_dir.exists():
+              shutil.rmtree(unzip_dir)
+          subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), str(unzip_dir)], check=True)
+          extracted_bundle = unzip_dir / "GoDreamAI Plus.app"
+          assert_executable(extracted_bundle / "Contents" / "MacOS" / "GoDreamAI Plus")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "python" / "bin" / "python3.11")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "python" / "bin" / "python3")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "ffmpeg" / "bin" / "ffmpeg")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "ffmpeg" / "bin" / "ffprobe")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "python" / "bin" / "python3.11")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "python" / "bin" / "python3")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "ffmpeg" / "bin" / "ffmpeg")
+          assert_executable(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-x86_64" / "ffmpeg" / "bin" / "ffprobe")
+          subprocess.run(
+              [str(extracted_bundle / "Contents" / "Resources" / "runtime" / "macos-arm64" / "python" / "bin" / "python3.11"), "-V"],
+              check=True,
+          )
+          print(bundle)
+          print(archive)
+          PY
+
+      - name: Upload macOS release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp dist/GoDreamAI-Plus-macOS.zip "dist/GoDreamAI-Plus-macOS-${GITHUB_REF_NAME}.zip"
+          gh release upload "${GITHUB_REF_NAME}" "dist/GoDreamAI-Plus-macOS-${GITHUB_REF_NAME}.zip" --clobber -R "${GITHUB_REPOSITORY}"
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - prepare-release
+      - build-windows-launcher
+      - build-macos-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Remove intermediate payload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete-asset "${GITHUB_REF_NAME}" GoDreamAI-Plus-macOS-payload-arm64.tar.gz --yes -R "${GITHUB_REPOSITORY}" || true
+          gh release delete-asset "${GITHUB_REF_NAME}" GoDreamAI-Plus-macOS-payload-x86_64.tar.gz --yes -R "${GITHUB_REPOSITORY}" || true
+
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" --draft=false --title "${GITHUB_REF_NAME}" -R "${GITHUB_REPOSITORY}"

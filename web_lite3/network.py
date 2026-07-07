@@ -21,6 +21,7 @@ ALLOWED_NETWORK_MODES = {
 }
 DEFAULT_PROVIDER_NETWORK_MODES = {
     "volcengine": NETWORK_MODE_DIRECT,
+    "kling": NETWORK_MODE_DIRECT,
 }
 KEY_ERROR_CODES = {"missing_api_key", "api_key_error"}
 NETWORK_ERROR_CODES = {"proxy_unreachable", "tls_error", "connect_timeout", "network_error"}
@@ -351,7 +352,7 @@ class ProviderNetworkManager:
     def status_payload(self, *, api_keys: dict[str, bool] | None = None) -> dict[str, Any]:
         keys = api_keys or {}
         providers = {}
-        for provider in ("volcengine",):
+        for provider in ("volcengine", "kling"):
             item = self.provider_config(provider).to_dict()
             item["api_key_configured"] = bool(keys.get(provider, False))
             item = self._with_user_guidance(provider, item)
@@ -409,18 +410,23 @@ class ProviderNetworkManager:
             "proxy_detected": bool(self.proxy_url),
             "results": {
                 provider: self.check_provider(provider, api_key=api_keys.get(provider, ""), timeout=timeout)
-                for provider in ("volcengine",)
+                for provider in ("volcengine", "kling")
             },
         }
 
     @staticmethod
     def _provider_key_message(provider: str) -> str:
-        labels = {"volcengine": "请先配置 Volcengine API Key。"}
+        labels = {
+            "volcengine": "请先配置 Volcengine API Key。",
+            "kling": "请先配置 Kling API Key。",
+        }
         return labels.get(provider, "请先配置 API Key。")
 
     @staticmethod
     def _check_request(provider: str, api_key: str) -> tuple[str, dict[str, str], dict[str, str]]:
         token = str(api_key or "").strip()
+        if provider == "kling":
+            return "https://api-beijing.klingai.com/v1/images/generations", {"Authorization": f"Bearer {token}"}, {}
         return "https://ark.cn-beijing.volces.com/api/v3/models", {"Authorization": f"Bearer {token}"}, {}
 
     @staticmethod
@@ -474,7 +480,7 @@ class ProviderNetworkManager:
 
     @staticmethod
     def _vpn_instruction(provider: str) -> tuple[str, str]:
-        if provider == "volcengine":
+        if provider in {"volcengine", "kling"}:
             return "需要关闭 VPN", "请关闭 VPN 后重试。"
         return "需要切换 VPN", "请切换 VPN 状态后重试。"
 
@@ -482,6 +488,8 @@ class ProviderNetworkManager:
     def _initial_user_hint(provider: str) -> tuple[str, str]:
         if provider == "volcengine":
             return "等待检测", "火山引擎通常需要关闭 VPN。"
+        if provider == "kling":
+            return "等待检测", "可灵中国大陆接口通常直连。"
         return "等待检测", "点击检测连通性查看结果。"
 
     @staticmethod

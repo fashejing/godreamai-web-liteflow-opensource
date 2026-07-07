@@ -73,11 +73,14 @@ DEFAULT_PROMPT_FONT_SIZE = 16
 MIN_PROMPT_FONT_SIZE = 14
 MAX_PROMPT_FONT_SIZE = 28
 IMAGE_PROVIDER_SORT_ORDER = {
-    "google": 0,
-    "volcengine": 1,
-    "openai": 2,
+    "volcengine": 0,
+    "kling": 1,
+    "google": 2,
+    "openai": 3,
 }
 IMAGE_MODEL_SORT_ORDER = {
+    "kling_image_v3": 0,
+    "kling_image_v3_omni": 1,
     "nano_banana_2": 0,
     "nano_banana_pro": 1,
     "nano_banana": 2,
@@ -97,8 +100,10 @@ class SettingsPayload(BaseModel):
     openai_network_mode: str = NETWORK_MODE_PROXY
     google_network_mode: str = NETWORK_MODE_PROXY
     volcengine_network_mode: str = NETWORK_MODE_DIRECT
+    kling_network_mode: str = NETWORK_MODE_DIRECT
     storage_dir: str
     volcengine_api_key: str = ""
+    kling_api_key: str = ""
     google_api_key: str = ""
     openai_api_key: str = ""
 
@@ -134,7 +139,7 @@ class SettingsPayload(BaseModel):
     def validate_api_proxy_url(cls, value: Any) -> str:
         return normalize_proxy_url(value)
 
-    @field_validator("openai_network_mode", "google_network_mode", "volcengine_network_mode", mode="before")
+    @field_validator("openai_network_mode", "google_network_mode", "volcengine_network_mode", "kling_network_mode", mode="before")
     @classmethod
     def validate_network_mode(cls, value: Any, info) -> str:
         provider = str(info.field_name or "").replace("_network_mode", "")
@@ -415,6 +420,13 @@ class ImageGenerateRequest(BaseModel):
             output_images = self.count if self.sequential_mode else 1
             if total_image_inputs + output_images > max_total_images:
                 raise ValueError(f"{spec.get('label', 'Seedream')} input and output images must not exceed {max_total_images}")
+        if provider == "kling":
+            total_image_inputs = (1 if self.input_asset_id else 0) + len(self.reference_asset_ids)
+            max_input_images = int(spec.get("max_input_images") or 1)
+            if total_image_inputs > max_input_images:
+                raise ValueError(f"{spec.get('label', 'Kling image model')} supports up to {max_input_images} reference image")
+            if self.input_asset_id:
+                raise ValueError("Kling image models use reference images, not base image mode")
         if provider == "openai":
             total_image_inputs = (1 if self.input_asset_id else 0) + len(self.reference_asset_ids)
             max_input_images = int(spec.get("max_input_images") or 16)

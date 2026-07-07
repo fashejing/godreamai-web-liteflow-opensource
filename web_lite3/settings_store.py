@@ -56,9 +56,12 @@ class AppSettings:
     openai_network_mode: str = NETWORK_MODE_PROXY
     google_network_mode: str = NETWORK_MODE_PROXY
     volcengine_network_mode: str = NETWORK_MODE_DIRECT
+    kling_network_mode: str = NETWORK_MODE_DIRECT
     storage_dir: str = ""
     volcengine_api_key: str = ""
     volcengine_api_key_history: list[str] | None = None
+    kling_api_key: str = ""
+    kling_api_key_history: list[str] | None = None
     google_api_key: str = ""
     google_api_key_history: list[str] | None = None
     openai_api_key: str = ""
@@ -75,9 +78,12 @@ class AppSettings:
             "openai_network_mode": self.openai_network_mode,
             "google_network_mode": self.google_network_mode,
             "volcengine_network_mode": self.volcengine_network_mode,
+            "kling_network_mode": self.kling_network_mode,
             "storage_dir": self.storage_dir,
             "volcengine_api_key": self.volcengine_api_key,
             "volcengine_api_key_history": list(self.volcengine_api_key_history or []),
+            "kling_api_key": self.kling_api_key,
+            "kling_api_key_history": list(self.kling_api_key_history or []),
             "google_api_key": self.google_api_key,
             "google_api_key_history": list(self.google_api_key_history or []),
             "openai_api_key": self.openai_api_key,
@@ -146,7 +152,9 @@ class SettingsStore:
             openai_network_mode=NETWORK_MODE_PROXY,
             google_network_mode=NETWORK_MODE_PROXY,
             volcengine_network_mode=NETWORK_MODE_DIRECT,
+            kling_network_mode=NETWORK_MODE_DIRECT,
             volcengine_api_key_history=[],
+            kling_api_key_history=[],
             google_api_key_history=[],
             openai_api_key_history=[],
         )
@@ -194,9 +202,12 @@ class SettingsStore:
             openai_network_mode=self._normalize_provider_network_mode("openai", merged.get("openai_network_mode")),
             google_network_mode=self._normalize_provider_network_mode("google", merged.get("google_network_mode")),
             volcengine_network_mode=self._normalize_provider_network_mode("volcengine", merged.get("volcengine_network_mode")),
+            kling_network_mode=self._normalize_provider_network_mode("kling", merged.get("kling_network_mode")),
             storage_dir=str(merged.get("storage_dir") or self.paths.storage_dir),
             volcengine_api_key=str(merged.get("volcengine_api_key") or ""),
             volcengine_api_key_history=self._normalize_api_key_history(merged.get("volcengine_api_key_history")),
+            kling_api_key=str(merged.get("kling_api_key") or ""),
+            kling_api_key_history=self._normalize_api_key_history(merged.get("kling_api_key_history")),
             google_api_key=str(merged.get("google_api_key") or ""),
             google_api_key_history=self._normalize_api_key_history(merged.get("google_api_key_history")),
             openai_api_key=str(merged.get("openai_api_key") or ""),
@@ -244,9 +255,10 @@ class SettingsStore:
             merged["openai_network_mode"] = self._normalize_provider_network_mode("openai", merged.get("openai_network_mode"))
             merged["google_network_mode"] = self._normalize_provider_network_mode("google", merged.get("google_network_mode"))
             merged["volcengine_network_mode"] = self._normalize_provider_network_mode("volcengine", merged.get("volcengine_network_mode"))
+            merged["kling_network_mode"] = self._normalize_provider_network_mode("kling", merged.get("kling_network_mode"))
             merged["storage_dir"] = self._normalize_path(merged.get("storage_dir") or self.paths.storage_dir)
             merged.pop("material_storage_dir", None)
-            for provider in ("volcengine", "google", "openai"):
+            for provider in ("volcengine", "kling", "google", "openai"):
                 active_key = str(merged.get(f"{provider}_api_key") or "").strip()
                 history = self._normalize_api_key_history(merged.get(f"{provider}_api_key_history"))
                 if active_key:

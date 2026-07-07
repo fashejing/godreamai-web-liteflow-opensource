@@ -25,11 +25,15 @@ from pydantic import ValidationError
 
 from web_lite3.constants import (
     APP_NAME,
+    APP_BRAND_SIDEBAR_TITLE,
+    APP_BRAND_SIDEBAR_TITLE_EMPHASIS,
+    APP_BRAND_SIDEBAR_TITLE_REST,
     APP_BRAND_SIDEBAR_SUBTITLE,
     APP_BRAND_SUBTITLE,
     APP_BRAND_TITLE,
     APP_BRAND_TITLE_EMPHASIS,
     APP_BRAND_TITLE_REST,
+    APP_DISPLAY_RELEASE_VERSION,
     APP_HEALTH_NAME,
     DEFAULT_IMAGE_MODEL_VARIANT,
     DOMESTIC_DOC_LINKS,
@@ -44,6 +48,7 @@ from web_lite3.constants import (
     JOB_STATUS_RUNNING,
     JOB_STATUS_SUCCEEDED,
     JOB_TERMINAL_STATUSES,
+    KLING_IMAGE_MODES,
     RECORD_CARD_SIZE_OPTIONS,
     SEEDREAM_IMAGE_MODES,
     THEMES,
@@ -141,12 +146,14 @@ def create_app(
         current = settings or _current_settings()
         return {
             "volcengine": bool(str(getattr(current, "volcengine_api_key", "") or "").strip()),
+            "kling": bool(str(getattr(current, "kling_api_key", "") or "").strip()),
         }
 
     def _current_api_keys(settings=None) -> dict[str, str]:
         current = settings or _current_settings()
         return {
             "volcengine": str(getattr(current, "volcengine_api_key", "") or "").strip(),
+            "kling": str(getattr(current, "kling_api_key", "") or "").strip(),
         }
 
     def _network_status_payload(settings=None) -> dict[str, Any]:
@@ -154,7 +161,10 @@ def create_app(
         manager = ProviderNetworkManager(current)
         payload = manager.status_payload(api_keys=_current_api_key_presence(current))
         providers = payload.get("providers") or {}
-        payload["providers"] = {"volcengine": providers.get("volcengine", {})}
+        payload["providers"] = {
+            "volcengine": providers.get("volcengine", {}),
+            "kling": providers.get("kling", {}),
+        }
         return payload
 
     def _preview_settings(payload: SettingsPayload | None) -> AppSettings:
@@ -163,7 +173,10 @@ def create_app(
             return AppSettings(**current.to_dict())
         merged = _current_settings().to_dict()
         merged.update(payload.model_dump())
+        merged["openai_network_mode"] = "proxy"
+        merged["google_network_mode"] = "proxy"
         merged["volcengine_network_mode"] = "direct"
+        merged["kling_network_mode"] = "direct"
         return AppSettings(**merged)
 
     def _current_history_store() -> HistoryStore:
@@ -2052,6 +2065,7 @@ def create_app(
         if kind == IMAGE_KIND:
             image_mode_order_lookup = {
                 "volcengine": {mode: index for index, mode in enumerate(SEEDREAM_IMAGE_MODES)},
+                "kling": {mode: index for index, mode in enumerate(KLING_IMAGE_MODES)},
             }
             mode_items = [
                 {
@@ -2140,9 +2154,13 @@ def create_app(
         app_brand_title=APP_BRAND_TITLE,
         app_brand_title_emphasis=APP_BRAND_TITLE_EMPHASIS,
         app_brand_title_rest=APP_BRAND_TITLE_REST,
+        app_brand_sidebar_title=APP_BRAND_SIDEBAR_TITLE,
+        app_brand_sidebar_title_emphasis=APP_BRAND_SIDEBAR_TITLE_EMPHASIS,
+        app_brand_sidebar_title_rest=APP_BRAND_SIDEBAR_TITLE_REST,
         app_brand_subtitle=APP_BRAND_SUBTITLE,
         app_brand_sidebar_subtitle=APP_BRAND_SIDEBAR_SUBTITLE,
         app_display_name=APP_HEALTH_NAME,
+        app_release_version=APP_DISPLAY_RELEASE_VERSION,
         static_asset_version=runtime_id,
     )
     app.mount("/static", StaticFiles(directory=str(package_dir / "static")), name="static")
@@ -2187,6 +2205,10 @@ def create_app(
                 "volcengine": [
                     {"value": item, "label": _mask_api_key(item)}
                     for item in settings.volcengine_api_key_history or []
+                ],
+                "kling": [
+                    {"value": item, "label": _mask_api_key(item)}
+                    for item in settings.kling_api_key_history or []
                 ],
             },
         }
@@ -3939,7 +3961,11 @@ def create_app(
         api_key = str(getattr(settings, field_name, "") or "").strip()
         if api_key:
             return
-        detail = "请先在设置页配置 Volcengine API Key"
+        key_names = {
+            "volcengine": "Volcengine API Key",
+            "kling": "Kling API Key",
+        }
+        detail = f"请先在设置页配置 {key_names.get(provider, 'Volcengine API Key')}"
         raise HTTPException(status_code=400, detail=detail)
 
     def _require_video_api_key(model_variant: str) -> None:
@@ -3949,7 +3975,11 @@ def create_app(
         api_key = str(getattr(settings, field_name, "") or "").strip()
         if api_key:
             return
-        raise HTTPException(status_code=400, detail="请先在设置页配置 Volcengine API Key")
+        key_names = {
+            "volcengine": "Volcengine API Key",
+            "kling": "Kling API Key",
+        }
+        raise HTTPException(status_code=400, detail=f"请先在设置页配置 {key_names.get(provider, 'Volcengine API Key')}")
 
     def _update_history_record(
         history_store: HistoryStore,
@@ -4569,7 +4599,11 @@ def create_app(
                 "volcengine": manager.check_provider(
                     "volcengine",
                     api_key=api_keys.get("volcengine", ""),
-                )
+                ),
+                "kling": manager.check_provider(
+                    "kling",
+                    api_key=api_keys.get("kling", ""),
+                ),
             },
         }
 

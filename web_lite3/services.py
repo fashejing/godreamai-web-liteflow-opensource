@@ -31,6 +31,12 @@ from web_lite3.files import (
 )
 from web_lite3.history_store import HistoryStore
 from web_lite3.jobs import JobCancelledError, JobContext
+from web_lite3.kling import (
+    KlingImageGateway,
+    KlingVideoGateway,
+    build_kling_image_payload,
+    build_kling_video_payload,
+)
 from web_lite3.network import ProviderNetworkManager
 from web_lite3.schemas import ImageGenerateRequest, VideoGenerateRequest
 from web_lite3.settings_store import SettingsStore
@@ -130,10 +136,12 @@ class ImageGenerationService:
         if isinstance(gateway_factory, dict):
             self.gateway_factories = {
                 "volcengine": gateway_factory.get("volcengine", VolcengineImageGateway),
+                "kling": gateway_factory.get("kling", KlingImageGateway),
             }
         else:
             self.gateway_factories = {
                 "volcengine": gateway_factory,
+                "kling": KlingImageGateway,
             }
         self._gateway_cache: dict[str, Any] = {}
         self._gateway_lock = threading.Lock()
@@ -154,12 +162,16 @@ class ImageGenerationService:
         settings = self.settings_store.load()
         model_spec = IMAGE_MODELS[model_variant]
         provider = str(model_spec.get("provider") or "volcengine").strip()
-        if provider != "volcengine":
-            raise ValueError("开源版仅支持火山引擎模型")
+        if provider not in {"volcengine", "kling"}:
+            raise ValueError("开源版仅支持火山引擎和可灵模型")
         field_name = IMAGE_PROVIDER_API_KEY_FIELDS.get(provider, "volcengine_api_key")
         api_key = str(getattr(settings, field_name, "") or "").strip()
         if not api_key:
-            raise ValueError("请先在设置页配置 Volcengine API Key")
+            key_names = {
+                "volcengine": "Volcengine API Key",
+                "kling": "Kling API Key",
+            }
+            raise ValueError(f"请先在设置页配置 {key_names.get(provider, 'Volcengine API Key')}")
         storage = ensure_storage_paths(settings.storage_dir)
         history_store = self.history_store_resolver(settings.storage_dir)
         network_manager = ProviderNetworkManager(settings)
@@ -322,7 +334,10 @@ class ImageGenerationService:
             for asset_id in request.reference_asset_ids
             if str(asset_id or "").strip()
         ]
-        payload = build_image_payload(provider_request, input_image=input_image, reference_images=reference_images)
+        if provider == "kling":
+            payload = build_kling_image_payload(provider_request, input_image=input_image, reference_images=reference_images)
+        else:
+            payload = build_image_payload(provider_request, input_image=input_image, reference_images=reference_images)
         return {
             "storage": storage,
             "history_store": history_store,
@@ -483,10 +498,12 @@ class VideoGenerationService:
         if isinstance(gateway_factory, dict):
             self.gateway_factories = {
                 "volcengine": gateway_factory.get("volcengine", VolcengineVideoGateway),
+                "kling": gateway_factory.get("kling", KlingVideoGateway),
             }
         else:
             self.gateway_factories = {
                 "volcengine": gateway_factory,
+                "kling": KlingVideoGateway,
             }
         self._gateway_cache: dict[str, Any] = {}
         self._gateway_lock = threading.Lock()
@@ -504,12 +521,16 @@ class VideoGenerationService:
     def _resolve_runtime(self, model_variant: str) -> tuple[Any, Any, HistoryStore, Any, ProviderNetworkManager, str]:
         settings = self.settings_store.load()
         provider = video_model_provider(model_variant)
-        if provider != "volcengine":
-            raise ValueError("开源版仅支持火山引擎模型")
+        if provider not in {"volcengine", "kling"}:
+            raise ValueError("开源版仅支持火山引擎和可灵模型")
         field_name = VIDEO_PROVIDER_API_KEY_FIELDS.get(provider, "volcengine_api_key")
         api_key = str(getattr(settings, field_name, "") or "").strip()
         if not api_key:
-            raise ValueError("请先在设置页配置 Volcengine API Key")
+            key_names = {
+                "volcengine": "Volcengine API Key",
+                "kling": "Kling API Key",
+            }
+            raise ValueError(f"请先在设置页配置 {key_names.get(provider, 'Volcengine API Key')}")
         storage = ensure_storage_paths(settings.storage_dir)
         history_store = self.history_store_resolver(settings.storage_dir)
         network_manager = ProviderNetworkManager(settings)
@@ -618,6 +639,13 @@ class VideoGenerationService:
         last_frame: str | None,
         reference_images: list[str],
     ) -> dict[str, Any]:
+        if provider == "kling":
+            return build_kling_video_payload(
+                request,
+                first_frame=first_frame,
+                last_frame=last_frame,
+                reference_images=reference_images,
+            )
         return build_video_payload(
             request,
             first_frame=first_frame,

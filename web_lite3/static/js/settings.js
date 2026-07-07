@@ -4,8 +4,9 @@ const config = getPageConfig();
 const settings = config.settings || {};
 const automaticNetworkModes = {
   volcengine: "direct",
+  kling: "direct",
 };
-const networkProviders = ["volcengine"];
+const networkProviders = ["volcengine", "kling"];
 const promptFontSizeDefaults = {
   min: 14,
   max: 28,
@@ -52,6 +53,7 @@ function syncPromptFontSizeDisplay() {
 
 function fillForm() {
   $("#volcengineApiKey").value = settings.volcengine_api_key || "";
+  $("#klingApiKey").value = settings.kling_api_key || "";
   $("#storageDir").value = settings.storage_dir || "";
   $("#apiNetworkAutoSwitch").value = settings.api_network_auto_switch === false ? "false" : "true";
   $("#apiProxyUrl").value = settings.api_proxy_url || "";
@@ -61,12 +63,15 @@ function fillForm() {
   $("#themeSelect").value = settings.theme || "light";
   $("#autoOpenBrowser").checked = Boolean(settings.auto_open_browser);
   populateApiKeyHistory("#volcengineApiKeyHistorySelect", config.masked_api_key_history?.volcengine || []);
+  populateApiKeyHistory("#klingApiKeyHistorySelect", config.masked_api_key_history?.kling || []);
   syncPromptFontSizeDisplay();
 }
 
 function syncAutomaticNetworkPolicy() {
   $("#volcengineNetworkMode").value = automaticNetworkModes.volcengine;
+  $("#klingNetworkMode").value = automaticNetworkModes.kling;
   settings.volcengine_network_mode = automaticNetworkModes.volcengine;
+  settings.kling_network_mode = automaticNetworkModes.kling;
 }
 
 function collectForm() {
@@ -78,21 +83,29 @@ function collectForm() {
     theme: $("#themeSelect").value,
     api_network_auto_switch: $("#apiNetworkAutoSwitch").value !== "false",
     api_proxy_url: $("#apiProxyUrl").value.trim(),
+    openai_network_mode: "proxy",
+    google_network_mode: "proxy",
     volcengine_network_mode: automaticNetworkModes.volcengine,
+    kling_network_mode: automaticNetworkModes.kling,
     storage_dir: $("#storageDir").value.trim(),
     volcengine_api_key: $("#volcengineApiKey").value.trim(),
+    kling_api_key: $("#klingApiKey").value.trim(),
+    google_api_key: "",
+    openai_api_key: "",
   };
 }
 
 function networkProviderLabel(provider) {
   return {
     volcengine: "火山引擎",
+    kling: "Kling",
   }[provider] || provider;
 }
 
 function apiKeyInputForProvider(provider) {
   return {
     volcengine: "#volcengineApiKey",
+    kling: "#klingApiKey",
   }[provider] || "";
 }
 
@@ -101,6 +114,12 @@ function defaultNetworkHint(provider) {
     return {
       status: "等待检测",
       hint: "火山引擎通常需要关闭 VPN。",
+    };
+  }
+  if (provider === "kling") {
+    return {
+      status: "等待检测",
+      hint: "可灵中国大陆接口通常直连。",
     };
   }
   return {
@@ -608,6 +627,13 @@ $("#volcengineApiKeyHistorySelect").addEventListener("change", () => {
   const value = $("#volcengineApiKeyHistorySelect").value;
   if (value) {
     $("#volcengineApiKey").value = value;
+  }
+});
+
+$("#klingApiKeyHistorySelect").addEventListener("change", () => {
+  const value = $("#klingApiKeyHistorySelect").value;
+  if (value) {
+    $("#klingApiKey").value = value;
   }
 });
 

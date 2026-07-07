@@ -347,12 +347,15 @@ test("settings network helper presents VPN guidance without advanced controls", 
   const template = fs.readFileSync(new URL("../web_lite3/templates/settings.html", import.meta.url), "utf8");
   const source = fs.readFileSync(new URL("../web_lite3/static/js/settings.js", import.meta.url), "utf8");
   assert.match(template, /VPN 状态助手/);
-  assert.match(template, /开源版仅检测火山引擎，通常需要关闭 VPN 后直连/);
+  assert.match(template, /火山引擎和可灵中国大陆接口通常直连/);
+  assert.match(template, /Kling API Key/);
   assert.doesNotMatch(template, /Google API Key/);
   assert.doesNotMatch(template, /GPT API Key/);
   assert.doesNotMatch(template, /<details class="network-advanced">/);
   assert.doesNotMatch(template, /高级设置/);
   assert.doesNotMatch(template, /本地代理地址/);
+  assert.match(source, /networkProviders = \["volcengine", "kling"\]/);
+  assert.match(source, /可灵中国大陆接口通常直连。/);
   assert.match(source, /请关闭 VPN 后重试。/);
   assert.match(source, /我已切换 VPN，重新检测/);
   assert.match(source, /function focusApiKeyInput\(provider\)/);
@@ -381,7 +384,7 @@ test("custom selects keep long option lists scrollable inside the viewport", () 
   assert.match(css, /position: fixed;/);
   assert.match(css, /overscroll-behavior: contain;/);
   assert.match(css, /[.]canvas-multi-camera-grid-modal \{[\s\S]*?overflow: visible;/);
-  assert.match(constants, /VIDEO_DURATION_OPTIONS = \[\{"value": second, "label": f"\{second\} 秒"\} for second in range\(4, 16\)\]/);
+  assert.match(constants, /VIDEO_DURATION_OPTIONS = \[\{"value": second, "label": f"\{second\} 秒"\} for second in range\(3, 16\)\]/);
 });
 
 test("canvas inspector omits redundant summary card and history detail", () => {

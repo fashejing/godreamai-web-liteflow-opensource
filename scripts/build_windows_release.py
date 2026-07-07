@@ -21,7 +21,7 @@ from scripts.runtime_packaging import (
     stage_flat_runtime,
     write_zip_from_directory,
 )
-from web_lite3.constants import APP_WINDOWS_ARCHIVE_NAME, APP_WINDOWS_LAUNCHER_EXE
+from web_lite3.constants import APP_RELEASE_VERSION, APP_WINDOWS_ARCHIVE_NAME, APP_WINDOWS_LAUNCHER_EXE
 
 
 ARCHIVE_NAME = APP_WINDOWS_ARCHIVE_NAME
@@ -47,6 +47,7 @@ def publish_windows_launcher(root: Path, output_dir: Path) -> Path:
             "-p:PublishSingleFile=true",
             "-p:SelfContained=true",
             "-p:IncludeNativeLibrariesForSelfExtract=true",
+            f"-p:InformationalVersion={APP_RELEASE_VERSION}",
             "-o",
             str(output_dir),
         ],

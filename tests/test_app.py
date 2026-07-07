@@ -9,17 +9,21 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from web_lite3.app import create_app
-from web_lite3.constants import APP_HEALTH_NAME, IMAGE_MODELS, VIDEO_MODELS
+from web_lite3.constants import APP_DISPLAY_RELEASE_VERSION, APP_HEALTH_NAME, IMAGE_MODELS, VIDEO_MODELS
 from web_lite3.data_paths import ensure_storage_paths
 from web_lite3.files import resolve_runtime_tool
 
 
 def test_model_whitelist_exact():
     assert sorted(IMAGE_MODELS.keys()) == [
+        "kling_image_v3",
+        "kling_image_v3_omni",
         "seedream_v4_5",
         "seedream_v5_0",
     ]
     assert sorted(VIDEO_MODELS.keys()) == [
+        "kling_3_0_omni",
+        "kling_3_0_turbo",
         "seedance_2_0",
         "seedance_2_0_fast",
     ]
@@ -53,14 +57,20 @@ def test_pages_load(tmp_path):
     assert library_page.status_code == 200
     assert settings_page.status_code == 200
     assert "Seedream 5.0 Lite" in image_page.text
+    assert "Kling Image 3.0" in image_page.text
+    assert "图生图" in image_page.text
     assert "GoImage2" not in image_page.text
     assert "首尾帧图生视频" in video_page.text
+    assert "Kling 3.0 Turbo" in video_page.text
+    assert "\\u56fe\\u751f\\u89c6\\u9891\\uff08\\u9996\\u5e27+\\u5c3e\\u5e27\\uff09" in video_page.text
     assert "多模态参考生视频" in video_page.text
     assert "GPT API Key" not in settings_page.text
 
-    assert "井鸽AI影视套件" in image_page.text
-    assert "<strong>井鸽</strong>AI影视套件" in image_page.text
+    assert "<title>生图 | 井鸽AI影视套件 WebUI</title>" in image_page.text
+    assert "<strong>井鸽</strong>启动器" in image_page.text
     assert "开源版WebUI" in image_page.text
+    assert f"版本 {APP_DISPLAY_RELEASE_VERSION}" not in image_page.text
+    assert f"版本 {APP_DISPLAY_RELEASE_VERSION}" in settings_page.text
     assert 'href="/storyboard"' not in image_page.text
     assert 'rel="prefetch" href="/storyboard"' not in image_page.text
     assert 'href="/canvas"' in image_page.text
@@ -153,6 +163,8 @@ def test_pages_load(tmp_path):
     assert 'id="googleApiKeyHistorySelect"' not in settings_page.text
     assert 'id="openaiApiKey"' not in settings_page.text
     assert 'id="openaiApiKeyHistorySelect"' not in settings_page.text
+    assert 'id="klingApiKey"' in settings_page.text
+    assert 'id="klingApiKeyHistorySelect"' in settings_page.text
     assert 'src="/static/js/settings.js?v=' in settings_page.text
     assert '<select id="openaiNetworkMode">' not in settings_page.text
     assert '<select id="googleNetworkMode">' not in settings_page.text
@@ -160,11 +172,12 @@ def test_pages_load(tmp_path):
     assert 'id="openaiNetworkMode" type="hidden" value="proxy"' not in settings_page.text
     assert 'id="googleNetworkMode" type="hidden" value="proxy"' not in settings_page.text
     assert 'id="volcengineNetworkMode" type="hidden" value="direct"' in settings_page.text
+    assert 'id="klingNetworkMode" type="hidden" value="direct"' in settings_page.text
     assert 'id="apiNetworkAutoSwitch" type="hidden" value="true"' in settings_page.text
     assert "VPN 状态助手" in settings_page.text
-    assert "开源版仅检测火山引擎，通常需要关闭 VPN 后直连" in settings_page.text
-    assert set(client.get("/api/network/status").json()["providers"]) == {"volcengine"}
-    assert set(client.post("/api/network/check").json()["results"]) == {"volcengine"}
+    assert "火山引擎和可灵中国大陆接口通常直连" in settings_page.text
+    assert set(client.get("/api/network/status").json()["providers"]) == {"volcengine", "kling"}
+    assert set(client.post("/api/network/check").json()["results"]) == {"volcengine", "kling"}
     assert "<summary>高级设置</summary>" not in settings_page.text
     assert "本地代理地址" not in settings_page.text
     assert "自动走本地代理" not in settings_page.text

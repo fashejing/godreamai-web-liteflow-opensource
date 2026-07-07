@@ -867,7 +867,7 @@ body.is-resizing-sidebar {
 }
 
 .brand-title {
-  font-size: 18px;
+  font-size: 27px;
   line-height: 1.12;
   font-weight: 800;
   letter-spacing: 0;
@@ -3485,7 +3485,7 @@ body[data-theme="mono_pixel"] .field textarea {
   }
 
   .brand-title {
-    font-size: 24px;
+    font-size: 27px;
   }
 }
 

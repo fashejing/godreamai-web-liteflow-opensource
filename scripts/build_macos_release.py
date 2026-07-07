@@ -29,6 +29,7 @@ from web_lite3.constants import (
     APP_MACOS_BUNDLE_IDENTIFIER,
     APP_MACOS_BUNDLE_NAME,
     APP_MACOS_EXECUTABLE_NAME,
+    APP_RELEASE_VERSION,
     APP_RUNTIME_COMMON_DIRNAME,
     APP_RUNTIME_MACOS_ARM64_TARGET,
     APP_RUNTIME_MACOS_X86_64_TARGET,
@@ -96,6 +97,7 @@ def write_info_plist(bundle_dir: Path) -> None:
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": "1.0",
         "CFBundleVersion": "1",
+        "GoDreamAIReleaseVersion": APP_RELEASE_VERSION,
         "LSMinimumSystemVersion": MIN_MACOS,
         "NSHighResolutionCapable": True,
     }
