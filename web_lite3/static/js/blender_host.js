@@ -49,7 +49,7 @@ uploadInput?.addEventListener("change", async () => {
   setImportStatus(`正在导入：${file.name}`);
   try {
     const asset = await uploadBlenderAsset(file);
-    setImportStatus(`已导入：${asset.label || file.name}，已刷新内嵌 Blender 资产库`);
+    setImportStatus(`已导入：${asset.label || file.name}，已刷新虚拟拍摄资产库`);
     showToast(`已导入3D模型：${asset.label || file.name}`);
     refreshBlenderFrame();
   } catch (error) {

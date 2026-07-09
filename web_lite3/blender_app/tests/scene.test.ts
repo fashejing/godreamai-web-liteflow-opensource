@@ -185,6 +185,19 @@ describe('scene document schema', () => {
     expect(parsed.renderSettings.floorMaterial).toBe('studio')
   })
 
+  it('keeps virtual production settings optional for old scenes', () => {
+    const scene = createInitialScene()
+    const legacyScene = { ...scene }
+    delete (legacyScene as Partial<typeof scene>).virtualProduction
+
+    const parsed = validateSceneDocument(legacyScene)
+
+    expect(parsed.virtualProduction).toEqual({
+      monitorEnabled: true,
+      panoramaEnabled: false,
+    })
+  })
+
   it('normalizes oversized light distances instead of rejecting render payloads', () => {
     const scene = createInitialScene()
     scene.lights![1].distance = 120

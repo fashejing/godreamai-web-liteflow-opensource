@@ -117,6 +117,15 @@ function multiCameraGridPrompt(gridType = "3x3", aspectRatio = "1:1") {
   ].join("\n");
 }
 
+const PANORAMA_720_PROMPT = [
+  "基于参考图生成一张可用于虚拟拍摄背景的 720° 全景图。",
+  "输出必须是 2:1 等距矩形全景图，覆盖完整 360° 水平方向和 180° 垂直方向，适合贴到球形天空盒中实时预览。",
+  "严格保持原图的空间特征、建筑/场景细节、材质、光线方向、时间氛围、色彩体系和镜头质感。",
+  "从当前画面自然延展出左、右、后方和天空/地面环境，让场景像同一个真实空间，而不是拼贴。",
+  "画面中心保持可作为主视线方向的构图，左右边缘必须尽量无缝闭合。",
+  "避免在离镜头极近的位置放置巨大主体，避免人物脸部畸变、文字、水印、边缘接缝、重复建筑、透视断裂和强烈 AI 伪影。",
+].join("\n");
+
 const GRID_TEMPLATES = {
   multi_camera_9: {
     label: "多机位宫格",
@@ -2825,6 +2834,38 @@ function createUpscaleImageTask(sourceNode = null, { label = "超分", canvasTem
   showToast(`已创建「${label}」任务，使用火山引擎图像参考模式并保持原图比例`);
 }
 
+function createPanorama720Task(sourceNode = null) {
+  const source = isGridSplitSourceNode(sourceNode) ? sourceNode : selectedGridSplitSource();
+  if (!source) {
+    showToast("请先选中一张图输入或图片结果，再生成720全景");
+    return;
+  }
+  const modelVariant = preferredUpscaleImageModelVariant();
+  const model = imageModelSpec(modelVariant);
+  const panoramaRatio = supportedAspectRatio(model, "2:1")
+    || closestSupportedAspectRatioFromRatio(model, "2:1")
+    || model.default_aspect_ratio
+    || firstOption(model.aspect_ratios, "16:9");
+  const task = createNode("image_task", {
+    x: Number(source.x || 0) + nodeSize(source).width + 90,
+    y: Number(source.y || 0),
+    label: "720全景图",
+    config: imageEditConfigForSourceAndModel(source, modelVariant, {
+      prompt: PANORAMA_720_PROMPT,
+      aspect_ratio: panoramaRatio,
+      size: preferredImageSizeForRatio(model, panoramaRatio),
+      count: 1,
+      canvas_template: "panorama_720",
+    }),
+  });
+  if (!task) return;
+  connectImageNodeToTask(source.id, task, "reference_image");
+  state.selectedNodeIds = new Set([task.id]);
+  render();
+  scheduleSave();
+  showToast(`已创建720全景任务，画幅 ${panoramaRatio}，并连接参考图`);
+}
+
 function openGridSplitModal(sourceNode = null) {
   const source = isGridSplitSourceNode(sourceNode) ? sourceNode : selectedGridSplitSource();
   if (!source) {
@@ -4259,6 +4300,10 @@ function runCanvasMenuAction(action) {
   }
   if (action === "upscale-image") {
     createUpscaleImageTask(contextNode);
+    return;
+  }
+  if (action === "generate-720-panorama") {
+    createPanorama720Task(contextNode);
     return;
   }
   if (action === "add-to-library") {

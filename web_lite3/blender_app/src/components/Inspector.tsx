@@ -9,6 +9,7 @@ import {
   Lightbulb,
   Link2,
   Magnet,
+  Monitor,
   Palette,
   Plus,
   Route,
@@ -48,9 +49,11 @@ import type {
   SceneDocument,
   SceneLight,
   SceneObject,
+  ShotCapture,
   SpeedCurveType,
   Transform,
   Vec3,
+  VirtualProductionSettings,
 } from '../scene/types'
 
 type InspectorProps = {
@@ -58,11 +61,21 @@ type InspectorProps = {
   selectedObject: SceneObject | null
   selectedKeyframeId: string | null
   renderJob: RenderJob | null
+  virtualProduction: VirtualProductionSettings
+  shotCaptures: ShotCapture[]
+  captureBusy: boolean
   onUpdateObjectTransform: (objectId: string, transform: Transform) => void
   onUpdateObjectColor: (objectId: string, color: string) => void
   onUpdateObjectMotion: (objectId: string, motion: ObjectMotion) => void
   onImportGreenScreenTexture: (objectId: string, file: File) => void
   onClearGreenScreenTexture: (objectId: string) => void
+  onToggleVirtualMonitor: () => void
+  onTogglePanoramaBackground: () => void
+  onImportPanoramaBackground: (file: File) => void
+  onClearPanoramaBackground: () => void
+  onCaptureStill: () => void
+  onDeleteShotCapture: (shotId: string) => void
+  onDownloadShotCapture: (shotId: string) => void
   selectedObjectBaseY: number | null
   selectedObjectTopY: number | null
   placementSnap: boolean
@@ -606,11 +619,21 @@ export const Inspector = ({
   selectedObject,
   selectedKeyframeId,
   renderJob,
+  virtualProduction,
+  shotCaptures,
+  captureBusy,
   onUpdateObjectTransform,
   onUpdateObjectColor,
   onUpdateObjectMotion,
   onImportGreenScreenTexture,
   onClearGreenScreenTexture,
+  onToggleVirtualMonitor,
+  onTogglePanoramaBackground,
+  onImportPanoramaBackground,
+  onClearPanoramaBackground,
+  onCaptureStill,
+  onDeleteShotCapture,
+  onDownloadShotCapture,
   selectedObjectBaseY,
   selectedObjectTopY,
   placementSnap,
@@ -671,6 +694,7 @@ export const Inspector = ({
     : null
   const [draggedKeyframeId, setDraggedKeyframeId] = useState<string | null>(null)
   const [dragOverKeyframeId, setDragOverKeyframeId] = useState<string | null>(null)
+  const panoramaInputRef = useRef<HTMLInputElement | null>(null)
 
   const updateKeyframePositionAxis = (axisIndex: number, value: number) => {
     if (!selectedKeyframe) {
@@ -710,6 +734,104 @@ export const Inspector = ({
           <h2>{selectedObject?.name ?? (selectedKeyframe ? '镜头点' : '当前工程')}</h2>
         </div>
       </div>
+
+      <CollapsibleSection title="虚拟拍摄台" className="inspector-section-virtual">
+        <div className="virtual-production-actions">
+          <button
+            type="button"
+            className={virtualProduction.monitorEnabled ? 'active' : ''}
+            onClick={onToggleVirtualMonitor}
+          >
+            <Monitor size={13} />
+            监视器
+          </button>
+          <button
+            type="button"
+            className={virtualProduction.panoramaEnabled ? 'active' : ''}
+            disabled={!virtualProduction.panoramaUrl}
+            onClick={onTogglePanoramaBackground}
+          >
+            <ImageIcon size={13} />
+            720 背景
+          </button>
+        </div>
+        <input
+          ref={panoramaInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            if (file) {
+              void onImportPanoramaBackground(file)
+            }
+            event.currentTarget.value = ''
+          }}
+        />
+        <div className="panorama-upload-row">
+          <button type="button" className="mini-action" onClick={() => panoramaInputRef.current?.click()}>
+            <Upload size={13} />
+            上传 720 图
+          </button>
+          {virtualProduction.panoramaUrl ? (
+            <button type="button" className="icon-mini danger" onClick={onClearPanoramaBackground}>
+              <X size={13} />
+            </button>
+          ) : null}
+          <span>{virtualProduction.panoramaName ?? '未设置背景'}</span>
+        </div>
+        <div className="shot-action-row">
+          <button
+            type="button"
+            className="mini-action"
+            disabled={captureBusy}
+            onClick={onCaptureStill}
+          >
+            <Camera size={13} />
+            截图
+          </button>
+        </div>
+        <div className="shot-library">
+          {shotCaptures.length === 0 ? (
+            <div className="empty-inspector">当前还没有截图。</div>
+          ) : (
+            shotCaptures.map((capture) => (
+              <article key={capture.id} className="shot-card">
+                <img src={capture.url} alt={capture.name} />
+                <div className="shot-card-body">
+                  <div className="shot-card-title">
+                    <strong>{capture.name}</strong>
+                    <span>
+                      {capture.width}x{capture.height} / {capture.timeSec.toFixed(2)}s
+                    </span>
+                  </div>
+                  <div className="shot-card-actions">
+                    <button
+                      type="button"
+                      className="icon-mini"
+                      title="下载截图"
+                      onClick={() => onDownloadShotCapture(capture.id)}
+                    >
+                      <Download size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-mini danger"
+                      title="删除截图"
+                      onClick={() => onDeleteShotCapture(capture.id)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  {capture.analysis ? (
+                    <pre className="shot-analysis">{capture.analysis}</pre>
+                  ) : null}
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </CollapsibleSection>
 
       <CollapsibleSection title="选中的白模" className="inspector-section-object">
         {selectedObject && selectedTransform ? (

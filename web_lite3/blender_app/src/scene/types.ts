@@ -189,6 +189,25 @@ export type RenderSettings = {
   floorMaterial: FloorMaterial
 }
 
+export type VirtualProductionSettings = {
+  monitorEnabled: boolean
+  panoramaEnabled: boolean
+  panoramaUrl?: string
+  panoramaName?: string
+}
+
+export type ShotCapture = {
+  id: string
+  name: string
+  url: string
+  width: number
+  height: number
+  timeSec: number
+  createdAt: string
+  assetId?: string
+  analysis?: string
+}
+
 export type FloorMaterial =
   | 'studio'
   | 'white'
@@ -208,6 +227,7 @@ export type SceneDocument = {
   lights?: SceneLight[]
   timeline: TimelineState
   renderSettings: RenderSettings
+  virtualProduction?: VirtualProductionSettings
 }
 
 export type RenderJobStatus = 'queued' | 'rendering' | 'completed' | 'failed'
@@ -234,6 +254,11 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   fillWhiteGround: false,
   hideGrid: false,
   floorMaterial: 'studio',
+}
+
+export const DEFAULT_VIRTUAL_PRODUCTION_SETTINGS: VirtualProductionSettings = {
+  monitorEnabled: true,
+  panoramaEnabled: false,
 }
 
 export const DEFAULT_TRANSFORM: Transform = {

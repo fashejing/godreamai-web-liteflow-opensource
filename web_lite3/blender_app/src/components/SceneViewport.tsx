@@ -11,28 +11,12 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
-import {
-  Box,
-  Clapperboard,
-  Expand,
-  Lamp,
-  Layers,
-  Palette,
-  Pause,
-  Play,
-  Route,
-  RotateCcw,
-  type LucideIcon,
-} from 'lucide-react'
+import { Maximize2, Minimize2, Pause, Play, X } from 'lucide-react'
 import {
   Box3,
   MOUSE,
-  Plane,
-  Raycaster,
-  Vector2,
   Vector3,
   type Group,
-  type Object3D,
   type PerspectiveCamera,
 } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
@@ -77,6 +61,7 @@ import {
   getFrameDistanceForBounds,
   getSceneObjectBounds,
 } from '../scene/viewFrame'
+import { CameraMonitorViewport } from './CameraMonitorViewport'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -97,15 +82,15 @@ type SceneViewportProps = {
   cameraView: boolean
   uiTheme: UiTheme
   snapToGrid: boolean
-  placementSnap: boolean
   visibility: ViewportVisibility
   cameraSegmentColors: boolean
+  monitorEnabled: boolean
   fullscreenActive?: boolean
   playing: boolean
-  onToggleVisibility: (key: keyof ViewportVisibility) => void
-  onToggleCameraSegmentColors: () => void
+  onToggleMonitor: () => void
   onToggleFullscreen: () => void
   onTogglePlay: () => void
+  resetViewTick: number
   onSelectObject: (objectId: string | null) => void
   onTransformObject: (objectId: string, transform: Transform) => void
   onViewportCameraChange: (sample: CameraSample) => void
@@ -117,18 +102,6 @@ type SceneViewportProps = {
   onMoveCurveControl: (fromKeyframeId: string, controlPoint: Vec3) => void
   onUpdateLight: (lightId: string, patch: Partial<SceneLight>) => void
 }
-
-const visibilityControls: Array<{
-  key: keyof ViewportVisibility
-  label: string
-  icon: LucideIcon
-}> = [
-  { key: 'lights', label: '光源', icon: Lamp },
-  { key: 'cameraPath', label: '镜头轨迹', icon: Clapperboard },
-  { key: 'objectPaths', label: '白模轨迹', icon: Route },
-  { key: 'floor', label: '地板', icon: Layers },
-  { key: 'greenScreen', label: '绿幕', icon: Box },
-]
 
 const viewportTheme = {
   dark: {
@@ -1053,100 +1026,6 @@ const ViewReporter = ({
   return null
 }
 
-const isVisibleMeshTarget = (object: Object3D): boolean => {
-  if (!(object as Object3D & { isMesh?: boolean }).isMesh) {
-    return false
-  }
-
-  let current: Object3D | null = object
-  while (current) {
-    if (!current.visible) {
-      return false
-    }
-    current = current.parent
-  }
-
-  return true
-}
-
-const CursorOrbitTarget = ({
-  cameraView,
-  spacePanning,
-  controlsRef,
-  onViewChange,
-}: {
-  cameraView: boolean
-  spacePanning: boolean
-  controlsRef: RefObject<OrbitControlsImpl | null>
-  onViewChange: () => void
-}) => {
-  const camera = useThree((state) => state.camera)
-  const gl = useThree((state) => state.gl)
-  const threeScene = useThree((state) => state.scene)
-  const raycasterRef = useRef(new Raycaster())
-  const pointerRef = useRef(new Vector2())
-  const floorPlaneRef = useRef(new Plane(new Vector3(0, 1, 0), 0))
-  const fallbackTargetRef = useRef(new Vector3())
-
-  useEffect(() => {
-    const canvas = gl.domElement
-    const raycaster = raycasterRef.current
-    const pointer = pointerRef.current
-    const floorPlane = floorPlaneRef.current
-
-    const resolvePointerTarget = (event: PointerEvent): Vector3 | null => {
-      const rect = canvas.getBoundingClientRect()
-      pointer.set(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1,
-      )
-      raycaster.setFromCamera(pointer, camera)
-
-      const hit = raycaster
-        .intersectObjects(threeScene.children, true)
-        .find((intersection) => isVisibleMeshTarget(intersection.object))
-
-      if (hit) {
-        return hit.point.clone()
-      }
-
-      return raycaster.ray.intersectPlane(floorPlane, fallbackTargetRef.current)
-        ? fallbackTargetRef.current.clone()
-        : null
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (cameraView || spacePanning || (event.button !== 0 && event.button !== 1 && event.button !== 2)) {
-        return
-      }
-
-      const controls = controlsRef.current
-      if (!controls?.enabled) {
-        return
-      }
-
-      const target = resolvePointerTarget(event)
-      if (!target) {
-        return
-      }
-
-      const cameraOffset = camera.position.clone().sub(controls.target)
-      controls.target.copy(target)
-      camera.position.copy(target).add(cameraOffset)
-      controls.update()
-      onViewChange()
-    }
-
-    canvas.addEventListener('pointerdown', handlePointerDown, true)
-
-    return () => {
-      canvas.removeEventListener('pointerdown', handlePointerDown, true)
-    }
-  }, [camera, cameraView, controlsRef, gl, onViewChange, spacePanning, threeScene])
-
-  return null
-}
-
 const ViewResetController = ({
   objects,
   assets,
@@ -1207,15 +1086,15 @@ export const SceneViewport = ({
   cameraView,
   uiTheme,
   snapToGrid,
-  placementSnap,
   visibility,
   cameraSegmentColors,
+  monitorEnabled,
   fullscreenActive = false,
   playing,
-  onToggleVisibility,
-  onToggleCameraSegmentColors,
+  onToggleMonitor,
   onToggleFullscreen,
   onTogglePlay,
+  resetViewTick,
   onSelectObject,
   onTransformObject,
   onViewportCameraChange,
@@ -1229,13 +1108,10 @@ export const SceneViewport = ({
 }: SceneViewportProps) => {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const [viewChangeTick, setViewChangeTick] = useState(0)
-  const [resetViewTick, setResetViewTick] = useState(0)
   const [spacePanning, setSpacePanning] = useState(false)
+  const [monitorFullscreen, setMonitorFullscreen] = useState(false)
   const bumpViewChangeTick = useCallback(() => {
     setViewChangeTick((tick) => tick + 1)
-  }, [])
-  const resetView = useCallback(() => {
-    setResetViewTick((tick) => tick + 1)
   }, [])
 
   useEffect(() => {
@@ -1267,7 +1143,6 @@ export const SceneViewport = ({
       window.removeEventListener('blur', stopSpacePanning)
     }
   }, [])
-  const timelineMode = getTimelineMode(scene)
   const colors = viewportTheme[uiTheme]
   const renderAspect = scene.renderSettings.width / scene.renderSettings.height
   const visibleObjects = visibility.greenScreen
@@ -1279,81 +1154,21 @@ export const SceneViewport = ({
       className={`viewport-shell ${cameraView ? 'is-camera-view' : ''} ${spacePanning ? 'is-space-panning' : ''}`}
       aria-label="3D viewport"
     >
-      <div className="viewport-topbar">
-        <div className="viewport-chip">画面窗口</div>
-        <div className="viewport-topbar-actions">
-          <div className="viewport-visibility-controls" aria-label="显示内容">
-            {visibilityControls.map((control) => {
-              const Icon = control.icon
-              const active = visibility[control.key]
-
-              return (
-                <button
-                  key={control.key}
-                  type="button"
-                  className={active ? 'active' : ''}
-                  title={`${active ? '隐藏' : '显示'}${control.label}`}
-                  aria-pressed={active}
-                  onClick={() => onToggleVisibility(control.key)}
-                >
-                  <Icon size={13} />
-                  <span>{control.label}</span>
-                </button>
-              )
-            })}
-            <button
-              type="button"
-              className={cameraSegmentColors ? 'active' : ''}
-              title={cameraSegmentColors ? '恢复统一绿色轨迹' : '用颜色区分每段轨迹'}
-              aria-pressed={cameraSegmentColors}
-              disabled={timelineMode !== 'motion' || !visibility.cameraPath}
-              onClick={onToggleCameraSegmentColors}
-            >
-              <Palette size={13} />
-              <span>分段颜色</span>
-            </button>
-            <button
-              type="button"
-              title={cameraView ? '最终镜头模式下不可重置编辑视角' : '重置到包含全部物件的视图'}
-              disabled={cameraView}
-              onClick={resetView}
-            >
-              <RotateCcw size={13} />
-              <span>重置视图</span>
-            </button>
-          </div>
-          <button
-            type="button"
-            className="viewport-fullscreen-button"
-            onClick={onToggleFullscreen}
-          >
-            <Expand size={14} />
-            {fullscreenActive ? '退出全屏' : '全屏播放'}
-          </button>
-          {fullscreenActive ? (
-            <button
-              type="button"
-              className="viewport-fullscreen-button viewport-play-button"
-              onClick={onTogglePlay}
-            >
-              {playing ? <Pause size={14} /> : <Play size={14} />}
-              {playing ? '暂停' : '播放'}
-            </button>
-          ) : null}
+      {fullscreenActive ? (
+        <div className="viewport-fullscreen-controls">
           <div className="viewport-readout">
             {cameraView ? '最终镜头' : '编辑视角'} / {currentTimeSec.toFixed(2)}s
           </div>
+          <button type="button" className="viewport-fullscreen-button" onClick={onTogglePlay}>
+            {playing ? <Pause size={14} /> : <Play size={14} />}
+            {playing ? '暂停' : '播放'}
+          </button>
+          <button type="button" className="viewport-fullscreen-button" onClick={onToggleFullscreen}>
+            <X size={14} />
+            退出全屏
+          </button>
         </div>
-      </div>
-      <div className="camera-guide-card">
-        <strong>{timelineMode === 'shots' ? '固定机位' : '运镜轨迹'}</strong>
-        <span>
-          {timelineMode === 'shots'
-            ? '蓝点=固定机位，青色虚线=切换顺序，播放时按镜头硬切。'
-            : `${cameraSegmentColors ? '彩色线' : '绿线'}=路线，编号=轨迹段，蓝点=镜头位置，方向按钮=朝向目标。`}
-          {placementSnap ? ' 同高磁吸开启。' : ' 自由摆放。'}
-        </span>
-      </div>
+      ) : null}
       <div
         className="viewport-canvas-frame"
         style={{
@@ -1376,12 +1191,6 @@ export const SceneViewport = ({
           {visibility.lights ? (
             <EditableLightGizmos scene={scene} onUpdateLight={onUpdateLight} />
           ) : null}
-          <CursorOrbitTarget
-            cameraView={cameraView}
-            spacePanning={spacePanning}
-            controlsRef={controlsRef}
-            onViewChange={bumpViewChangeTick}
-          />
           <ViewResetController
             objects={visibleObjects}
             assets={assets}
@@ -1395,6 +1204,11 @@ export const SceneViewport = ({
               colors={colors}
               uiTheme={uiTheme}
               showFloor={visibility.floor}
+              showPanorama={Boolean(
+                scene.virtualProduction?.panoramaEnabled &&
+                  scene.virtualProduction.panoramaUrl,
+              )}
+              panoramaUrl={scene.virtualProduction?.panoramaUrl}
             />
             {visibleObjects
               .filter((object) => object.visible)
@@ -1453,6 +1267,45 @@ export const SceneViewport = ({
           />
         </Canvas>
       </div>
+      {monitorEnabled && !fullscreenActive ? (
+        <div className={`shot-monitor-panel ${monitorFullscreen ? 'is-fullscreen' : ''}`}>
+          <div className="shot-monitor-header">
+            <div>
+              <strong>机位监视器</strong>
+              <span>
+                {scene.renderSettings.width}x{scene.renderSettings.height} /{' '}
+                {currentTimeSec.toFixed(2)}s
+              </span>
+            </div>
+            <div className="shot-monitor-header-actions">
+              <button
+                type="button"
+                title={monitorFullscreen ? '恢复监视器窗口' : '放大监视器'}
+                onClick={() => setMonitorFullscreen((value) => !value)}
+              >
+                {monitorFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              </button>
+              <button type="button" title="关闭监视器" onClick={onToggleMonitor}>
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+          <div
+            className="shot-monitor-frame"
+            style={{
+              aspectRatio: `${scene.renderSettings.width} / ${scene.renderSettings.height}`,
+            }}
+          >
+            <CameraMonitorViewport
+              scene={scene}
+              assets={assets}
+              currentTimeSec={currentTimeSec}
+              uiTheme={uiTheme}
+              showFloor={visibility.floor}
+            />
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

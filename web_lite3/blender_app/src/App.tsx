@@ -54,13 +54,13 @@ import { validateSceneDocument } from './scene/validation'
 import {
   normalizeObjectMotion,
   sampleObjectMotionTransform,
-  sceneMotionPresets,
 } from './scene/objectMotion'
 import {
   getObjectBaseY,
   getObjectTopY,
   snapObjectPositionToPlacementGuide,
 } from './scene/placement'
+import { DEFAULT_VIRTUAL_PRODUCTION_SETTINGS } from './scene/types'
 import type {
   AssetDefinition,
   CameraAimAnchor,
@@ -74,10 +74,12 @@ import type {
   SceneDocument,
   SceneLight,
   SceneObject,
+  ShotCapture,
   SpeedCurveType,
   TimelineMode,
   Transform,
   Vec3,
+  VirtualProductionSettings,
 } from './scene/types'
 import './App.css'
 
@@ -107,6 +109,32 @@ type BlenderDocumentFile = {
 type TextureUploadResponse = {
   name: string
   url: string
+}
+
+type LibraryAssetResponse = {
+  asset: {
+    id: string
+    display_name?: string
+    public_url?: string
+  }
+  category?: string
+  categories?: string[]
+}
+
+type ReferenceImageMetrics = {
+  width: number
+  height: number
+  aspectRatio: number
+  brightness: number
+  contrast: number
+  warmth: number
+  visualCenterX: number
+  visualCenterY: number
+  leftWeight: number
+  centerWeight: number
+  rightWeight: number
+  upperWeight: number
+  lowerWeight: number
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -143,6 +171,31 @@ const normalizeRenderSettingsForUi = (
   floorMaterial: normalizeFloorMaterial(settings.floorMaterial),
 })
 
+const getVirtualProductionSettings = (
+  document: SceneDocument,
+): VirtualProductionSettings => ({
+  ...DEFAULT_VIRTUAL_PRODUCTION_SETTINGS,
+  ...(document.virtualProduction ?? {}),
+})
+
+const greatestCommonDivisor = (a: number, b: number): number => {
+  let x = Math.abs(Math.round(a))
+  let y = Math.abs(Math.round(b))
+
+  while (y) {
+    const next = x % y
+    x = y
+    y = next
+  }
+
+  return x || 1
+}
+
+const formatAspectRatio = (width: number, height: number): string => {
+  const divisor = greatestCommonDivisor(width, height)
+  return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`
+}
+
 const nextPlacementOffset = (objectCount: number): number =>
   ((objectCount % 5) - 2) * 0.55
 
@@ -176,6 +229,275 @@ const importedAssetsFromScene = (scene: SceneDocument): AssetDefinition[] => {
   })
 
   return [...byId.values()]
+}
+
+const referenceRenderSettings = (
+  metrics: ReferenceImageMetrics,
+  current: RenderSettings,
+): RenderSettings => {
+  const aspect = metrics.aspectRatio
+  if (aspect > 1.55) {
+    return { ...current, width: 1920, height: 1080 }
+  }
+  if (aspect < 0.75) {
+    return { ...current, width: 1080, height: 1920 }
+  }
+  if (aspect > 1.15) {
+    return { ...current, width: 1440, height: 1080 }
+  }
+  if (aspect < 0.9) {
+    return { ...current, width: 1080, height: 1440 }
+  }
+  return { ...current, width: 1080, height: 1080 }
+}
+
+const referenceImageMetricsFromFile = (file: File): Promise<ReferenceImageMetrics> =>
+  new Promise((resolve, reject) => {
+    const image = new Image()
+    const objectUrl = URL.createObjectURL(file)
+
+    image.onload = () => {
+      try {
+        const width = Math.max(1, image.naturalWidth)
+        const height = Math.max(1, image.naturalHeight)
+        const canvas = document.createElement('canvas')
+        canvas.width = 48
+        canvas.height = 48
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+
+        if (!context) {
+          throw new Error('无法读取参考图像素')
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        const data = context.getImageData(0, 0, canvas.width, canvas.height).data
+        let lumaTotal = 0
+        let lumaSquareTotal = 0
+        let redTotal = 0
+        let blueTotal = 0
+        const pixelCount = data.length / 4
+        const lumas: number[] = []
+
+        for (let index = 0; index < data.length; index += 4) {
+          const red = data[index]
+          const green = data[index + 1]
+          const blue = data[index + 2]
+          const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722
+          lumas.push(luma)
+          lumaTotal += luma
+          lumaSquareTotal += luma * luma
+          redTotal += red
+          blueTotal += blue
+        }
+
+        const brightness = lumaTotal / pixelCount
+        const variance = Math.max(0, lumaSquareTotal / pixelCount - brightness * brightness)
+        let weightedX = 0
+        let weightedY = 0
+        let totalWeight = 0
+        let leftWeight = 0
+        let centerWeight = 0
+        let rightWeight = 0
+        let upperWeight = 0
+        let lowerWeight = 0
+
+        for (let y = 0; y < canvas.height; y += 1) {
+          for (let x = 0; x < canvas.width; x += 1) {
+            const index = y * canvas.width + x
+            const luma = lumas[index] ?? brightness
+            const leftLuma = x > 0 ? lumas[index - 1] ?? luma : luma
+            const topLuma = y > 0 ? lumas[index - canvas.width] ?? luma : luma
+            const edgeWeight = Math.abs(luma - leftLuma) + Math.abs(luma - topLuma)
+            const weight = Math.abs(luma - brightness) + edgeWeight * 0.65
+            const normalizedX = (x + 0.5) / canvas.width
+            const normalizedY = (y + 0.5) / canvas.height
+
+            weightedX += normalizedX * weight
+            weightedY += normalizedY * weight
+            totalWeight += weight
+            if (normalizedX < 1 / 3) {
+              leftWeight += weight
+            } else if (normalizedX > 2 / 3) {
+              rightWeight += weight
+            } else {
+              centerWeight += weight
+            }
+            if (normalizedY < 0.48) {
+              upperWeight += weight
+            } else {
+              lowerWeight += weight
+            }
+          }
+        }
+
+        const safeWeight = totalWeight > 0 ? totalWeight : 1
+        resolve({
+          width,
+          height,
+          aspectRatio: width / height,
+          brightness,
+          contrast: Math.sqrt(variance),
+          warmth: redTotal / pixelCount - blueTotal / pixelCount,
+          visualCenterX: totalWeight > 0 ? weightedX / safeWeight : 0.5,
+          visualCenterY: totalWeight > 0 ? weightedY / safeWeight : 0.5,
+          leftWeight: leftWeight / safeWeight,
+          centerWeight: centerWeight / safeWeight,
+          rightWeight: rightWeight / safeWeight,
+          upperWeight: upperWeight / safeWeight,
+          lowerWeight: lowerWeight / safeWeight,
+        })
+      } catch (error) {
+        reject(error)
+      } finally {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('参考图读取失败'))
+    }
+    image.src = objectUrl
+  })
+
+const buildReferenceWhiteboxScene = (
+  current: SceneDocument,
+  assetList: AssetDefinition[],
+  metrics: ReferenceImageMetrics,
+): { scene: SceneDocument; selectedObjectId: string | null; summary: string } => {
+  const byId = (assetId: string): AssetDefinition => {
+    const asset = assetList.find((candidate) => candidate.id === assetId)
+    if (!asset) {
+      throw new Error(`白模库缺少 ${assetId}`)
+    }
+    return asset
+  }
+  const renderSettings = referenceRenderSettings(metrics, current.renderSettings)
+  const isWide = metrics.aspectRatio > 1.45
+  const isPortrait = metrics.aspectRatio < 0.85
+  const isDark = metrics.brightness < 95
+  const isWarm = metrics.warmth > 18
+  const horizontalBias = clamp((metrics.visualCenterX - 0.5) * 2, -0.85, 0.85)
+  const subjectX = horizontalBias * (isWide ? 1.25 : 0.72)
+  const target: Vec3 = [subjectX * 0.35, 1.2, 0.25]
+  const isCloseShot = isPortrait || metrics.centerWeight > 0.47 || metrics.visualCenterY > 0.58
+  const isEstablishingShot = isWide && metrics.upperWeight > 0.56 && metrics.centerWeight < 0.38
+  const sideLabel = horizontalBias < -0.18 ? '偏左站位' : horizontalBias > 0.18 ? '偏右站位' : '居中站位'
+  const shotLabel = isCloseShot ? '近景/中近景' : isEstablishingShot ? '环境大全景' : '中景调度'
+  const backdropColor = isDark ? '#7a7a72' : isWarm ? '#d6c1a0' : '#b8bcc4'
+
+  const backdrop = createObjectFromAsset(byId('prop-wall'), {
+    name: '识图背景面',
+    transform: {
+      position: [0, 0, -1.35],
+      rotation: [0, 0, 0],
+      scale: [isWide ? 3.2 : 2.1, isPortrait ? 1.8 : 1.45, 1],
+    },
+    material: { color: backdropColor, roughness: 0.86 },
+  })
+  const hero = createObjectFromAsset(byId('person-whitebox'), {
+    name: '识图主位人物',
+    transform: {
+      position: [subjectX, 0, isCloseShot ? 0.1 : 0.32],
+      rotation: [0, isWide ? -0.12 - horizontalBias * 0.1 : -horizontalBias * 0.12, 0],
+      scale: [1, isCloseShot ? 1.08 : 0.94, 1],
+    },
+    material: { color: '#f2f4f7', roughness: 0.78 },
+  })
+  const objects: SceneObject[] = [backdrop, hero]
+
+  if (isWide) {
+    objects.push(
+      createObjectFromAsset(byId('person-whitebox'), {
+        name: '识图左侧站位',
+        transform: {
+          position: [subjectX - (metrics.rightWeight > metrics.leftWeight ? 1.65 : 1.18), 0, 0.42],
+          rotation: [0, 0.22, 0],
+          scale: [0.86, 0.92, 0.86],
+        },
+      }),
+      createObjectFromAsset(byId('prop-crate'), {
+        name: '识图前景道具',
+        transform: {
+          position: [subjectX + (horizontalBias > 0 ? -1.28 : 1.38), 0, isCloseShot ? 1.25 : 1.55],
+          rotation: [0, -0.35, 0],
+          scale: [0.75, 0.55, 0.75],
+        },
+        material: { color: isWarm ? '#c4934f' : '#9da3ac', roughness: 0.82 },
+      }),
+    )
+  } else {
+    objects.push(
+      createObjectFromAsset(byId('prop-crate'), {
+        name: '识图近景参照',
+        transform: {
+          position: [subjectX + (horizontalBias > 0 ? -0.72 : 0.78), 0, isCloseShot ? 0.98 : 1.2],
+          rotation: [0, -0.22, 0],
+          scale: [0.62, 0.48, 0.62],
+        },
+        material: { color: '#9da3ac', roughness: 0.82 },
+      }),
+    )
+  }
+
+  if (metrics.contrast > 48) {
+    objects.push(
+      createObjectFromAsset(byId('block-building'), {
+        name: '识图空间体块',
+        transform: {
+          position: [
+            isWide ? subjectX - 2.25 : subjectX - 1.05,
+            0,
+            isEstablishingShot ? -0.55 : -0.25,
+          ],
+          rotation: [0, 0.04, 0],
+          scale: [0.72, isPortrait ? 0.88 : isEstablishingShot ? 0.48 : 0.66, 0.54],
+        },
+        material: { color: isDark ? '#6f7378' : '#c4c6c8', roughness: 0.9 },
+      }),
+    )
+  }
+
+  const cameraPosition: Vec3 = isPortrait
+    ? [subjectX * 0.38, 1.78, isCloseShot ? 3.35 : 4.1]
+    : isWide
+      ? [
+          subjectX - (isEstablishingShot ? 4.4 : 3.55),
+          isEstablishingShot ? 2.25 : 1.95,
+          isEstablishingShot ? 6.0 : 4.75,
+        ]
+      : [subjectX - 2.1, 1.86, isCloseShot ? 3.85 : 4.4]
+  const fov = isCloseShot ? 30 : isEstablishingShot ? 50 : isWide ? 43 : 38
+  const keyframe = createCameraKeyframe(0, cameraPosition, target, fov)
+  keyframe.connectToNext = false
+  keyframe.shotDurationSec = renderSettings.durationSec
+
+  return {
+    selectedObjectId: hero.id,
+    scene: {
+      ...current,
+      objects,
+      cameras: [
+        {
+          id: 'reference-camera',
+          name: '识图镜头',
+          keyframes: [keyframe],
+        },
+      ],
+      activeCameraId: 'reference-camera',
+      cameraAimAnchor: {
+        enabled: true,
+        position: target,
+        snapEnabled: true,
+      },
+      lights: defaultSceneLights.map((light) => ({ ...light })),
+      timeline: {
+        currentTimeSec: 0,
+        mode: 'shots',
+      },
+      renderSettings,
+    },
+    summary: `${metrics.width}x${metrics.height} / ${formatAspectRatio(renderSettings.width, renderSettings.height)} / ${shotLabel} / ${sideLabel}`,
+  }
 }
 
 const cloneKeyframes = (keyframes: CameraKeyframe[]): CameraKeyframe[] =>
@@ -238,6 +560,7 @@ function App() {
   const [spaceTheme, setSpaceTheme] = useState<UiTheme>('dark')
   const [cameraView, setCameraView] = useState(false)
   const [fullscreenPreview, setFullscreenPreview] = useState(false)
+  const [resetViewTick, setResetViewTick] = useState(0)
   const [viewportVisibility, setViewportVisibility] = useState<ViewportVisibility>(
     defaultViewportVisibility,
   )
@@ -252,8 +575,14 @@ function App() {
   const playStartRef = useRef<{ timestamp: number; timeSec: number } | null>(null)
   const viewportCameraRef = useRef<CameraSample | null>(null)
   const renderCaptureRef = useRef<RenderCaptureHandle | null>(null)
+  const localSceneInputRef = useRef<HTMLInputElement | null>(null)
+  const referenceImageInputRef = useRef<HTMLInputElement | null>(null)
   const [captureScene, setCaptureScene] = useState<SceneDocument | null>(null)
   const [captureTimeSec, setCaptureTimeSec] = useState(0)
+  const [shotCaptures, setShotCaptures] = useState<ShotCapture[]>([])
+  const [captureBusy, setCaptureBusy] = useState(false)
+  const shotCounterRef = useRef(1)
+  const shotUrlsRef = useRef<string[]>([])
 
   const setSceneSilently = (update: SceneUpdate): SceneDocument => {
     const nextScene = resolveSceneUpdate(sceneRef.current, update)
@@ -415,9 +744,15 @@ function App() {
     return () => window.clearInterval(interval)
   }, [renderJob])
 
+  useEffect(() => () => {
+    shotUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    shotUrlsRef.current = []
+  }, [])
+
   const sceneForPersistence = (): SceneDocument => ({
     ...scene,
     lights: normalizeSceneLights(scene.lights ?? defaultSceneLights),
+    virtualProduction: getVirtualProductionSettings(scene),
   })
 
   const mergeImportedAssets = (nextAssets: AssetDefinition[]) => {
@@ -671,6 +1006,69 @@ function App() {
       }),
     }))
     setSystemMessage('已清除绿幕贴图')
+  }
+
+  const updateVirtualProduction = (
+    patch: Partial<VirtualProductionSettings>,
+  ) => {
+    commitScene((current) => ({
+      ...current,
+      virtualProduction: {
+        ...getVirtualProductionSettings(current),
+        ...patch,
+      },
+    }))
+  }
+
+  const toggleVirtualMonitor = () => {
+    const currentSettings = getVirtualProductionSettings(scene)
+    updateVirtualProduction({
+      monitorEnabled: !currentSettings.monitorEnabled,
+    })
+    setSystemMessage(
+      currentSettings.monitorEnabled ? '已隐藏机位监视器' : '已显示机位监视器',
+    )
+  }
+
+  const togglePanoramaBackground = () => {
+    const currentSettings = getVirtualProductionSettings(scene)
+    updateVirtualProduction({
+      panoramaEnabled: !currentSettings.panoramaEnabled,
+    })
+    setSystemMessage(
+      currentSettings.panoramaEnabled ? '已关闭 720 背景' : '已开启 720 背景',
+    )
+  }
+
+  const importPanoramaBackground = async (file: File) => {
+    setSystemMessage(`正在上传 720 背景：${file.name}`)
+
+    try {
+      const body = new FormData()
+      body.append('texture', file)
+      const texture = await apiJson<TextureUploadResponse>('/api/textures/import', {
+        method: 'POST',
+        body,
+      })
+
+      updateVirtualProduction({
+        panoramaEnabled: true,
+        panoramaUrl: texture.url,
+        panoramaName: texture.name,
+      })
+      setSystemMessage(`720 背景已启用：${texture.name}`)
+    } catch (error) {
+      setSystemMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const clearPanoramaBackground = () => {
+    updateVirtualProduction({
+      panoramaEnabled: false,
+      panoramaUrl: undefined,
+      panoramaName: undefined,
+    })
+    setSystemMessage('已清除 720 背景')
   }
 
   const groundSelectedObject = () => {
@@ -1528,54 +1926,6 @@ function App() {
     setPlaying((current) => !current)
   }
 
-  const addSceneMotionPreset = (presetId: string) => {
-    const preset = sceneMotionPresets.find((candidate) => candidate.id === presetId)
-
-    if (!preset) {
-      return
-    }
-
-    const nextObjects = preset.objects
-      .map((presetObject) => {
-        const asset = assets.find((candidate) => candidate.id === presetObject.assetId)
-
-        if (!asset) {
-          return null
-        }
-
-        return createObjectFromAsset(asset, {
-          name: presetObject.name,
-          transform: presetObject.transform,
-          material: presetObject.material,
-          motion: presetObject.motion,
-        })
-      })
-      .filter((object): object is SceneDocument['objects'][number] => Boolean(object))
-
-    if (nextObjects.length === 0) {
-      setSystemMessage('当前资产库缺少该导演运动所需白模')
-      return
-    }
-
-    commitScene((current) => ({
-      ...current,
-      objects: [...current.objects, ...nextObjects],
-      timeline: {
-        ...current.timeline,
-        mode: 'motion',
-        currentTimeSec: 0,
-      },
-      renderSettings: {
-        ...current.renderSettings,
-        durationSec: Math.max(current.renderSettings.durationSec, preset.durationSec),
-      },
-    }))
-    setSelectedObjectId(nextObjects[nextObjects.length - 1]?.id ?? null)
-    setSelectedKeyframeId(null)
-    setPlaying(false)
-    setSystemMessage(`已放入导演运动：${preset.label}`)
-  }
-
   const duplicateSelected = () => {
     const selected = selectedObject
     const asset = selected
@@ -1694,6 +2044,10 @@ function App() {
     }
   }
 
+  const requestLoadLocalDocument = () => {
+    localSceneInputRef.current?.click()
+  }
+
   const importAsset = async (file: File) => {
     setImporting(true)
     setSystemMessage(`正在导入：${file.name}`)
@@ -1748,6 +2102,142 @@ function App() {
       throw new Error('镜头预览画布没有返回 PNG 帧，请稍后再试。')
     }
     return lastFrame
+  }
+
+  const addShotCapture = (capture: ShotCapture) => {
+    shotUrlsRef.current.push(capture.url)
+    setShotCaptures((current) => {
+      const next = [capture, ...current]
+      const retained = next.slice(0, 24)
+      const discarded = next.slice(24)
+
+      discarded.forEach((item) => {
+        URL.revokeObjectURL(item.url)
+        shotUrlsRef.current = shotUrlsRef.current.filter((url) => url !== item.url)
+      })
+
+      return retained
+    })
+  }
+
+  const saveShotCaptureToLibrary = async (
+    frame: Blob,
+    name: string,
+    width: number,
+    height: number,
+    timeSec: number,
+  ): Promise<LibraryAssetResponse> => {
+    const body = new FormData()
+    body.append('file', frame, `${name.replace(/\s+/g, '-')}-${width}x${height}.png`)
+    body.append('name', name)
+    body.append('width', String(width))
+    body.append('height', String(height))
+    body.append('time_sec', String(timeSec))
+
+    return apiJson<LibraryAssetResponse>('/api/virtual-production/screenshots', {
+      method: 'POST',
+      body,
+    })
+  }
+
+  const captureStillFrame = async () => {
+    if (captureBusy) {
+      return
+    }
+
+    setCaptureBusy(true)
+    const exportScene = sceneForPersistence()
+    const timeSec = scene.timeline.currentTimeSec
+    const shotIndex = shotCounterRef.current
+    shotCounterRef.current += 1
+    setSystemMessage('正在截图并保存到素材库')
+
+    flushSync(() => {
+      setCaptureScene(exportScene)
+      setCaptureTimeSec(timeSec)
+    })
+
+    try {
+      await waitForRenderCapture()
+      const frame = await captureStablePngFrame(
+        exportScene.renderSettings.width,
+        exportScene.renderSettings.height,
+      )
+      const name = `虚拟拍摄截图 ${shotIndex}`
+      const saved = await saveShotCaptureToLibrary(
+        frame,
+        name,
+        exportScene.renderSettings.width,
+        exportScene.renderSettings.height,
+        timeSec,
+      )
+      const url = URL.createObjectURL(frame)
+      addShotCapture({
+        id: `shot-${Date.now()}-${shotIndex}`,
+        name,
+        url,
+        width: exportScene.renderSettings.width,
+        height: exportScene.renderSettings.height,
+        timeSec,
+        createdAt: new Date().toISOString(),
+        assetId: saved.asset.id,
+      })
+      setSystemMessage(`已保存到素材库 / 虚拟拍摄截图：${saved.asset.display_name ?? name}`)
+    } catch (error) {
+      setSystemMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCaptureScene(null)
+      setCaptureBusy(false)
+    }
+  }
+
+  const analyzeReferenceImage = async (file: File) => {
+    setCaptureBusy(true)
+    setSystemMessage(`正在识图搭景：${file.name}`)
+
+    try {
+      const metrics = await referenceImageMetricsFromFile(file)
+      const result = buildReferenceWhiteboxScene(sceneForPersistence(), assets, metrics)
+      commitScene(result.scene)
+      setSelectedObjectId(result.selectedObjectId)
+      setSelectedKeyframeId(result.scene.cameras[0]?.keyframes[0]?.id ?? null)
+      setCameraView(true)
+      setPlaying(false)
+      setSystemMessage(`已按参考图搭建白模场景：${result.summary}`)
+    } catch (error) {
+      setSystemMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCaptureBusy(false)
+    }
+  }
+
+  const deleteShotCapture = (shotId: string) => {
+    setShotCaptures((current) => {
+      const capture = current.find((item) => item.id === shotId)
+      if (capture) {
+        URL.revokeObjectURL(capture.url)
+        shotUrlsRef.current = shotUrlsRef.current.filter((url) => url !== capture.url)
+      }
+
+      return current.filter((item) => item.id !== shotId)
+    })
+    setSystemMessage('已删除截图')
+  }
+
+  const downloadShotCapture = (shotId: string) => {
+    const capture = shotCaptures.find((item) => item.id === shotId)
+
+    if (!capture) {
+      return
+    }
+
+    const link = document.createElement('a')
+    link.href = capture.url
+    link.download = `${capture.name.replace(/\s+/g, '-')}-${capture.width}x${capture.height}.png`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setSystemMessage(`已下载：${link.download}`)
   }
 
   const setLocalRenderProgress = (
@@ -1832,6 +2322,8 @@ function App() {
     }
   }
 
+  const virtualProduction = getVirtualProductionSettings(scene)
+
   const renderViewport = (isFullscreen = false) => (
     <SceneViewport
       scene={scene}
@@ -1842,15 +2334,15 @@ function App() {
       cameraView={cameraView}
       uiTheme={spaceTheme}
       snapToGrid={snapToGrid}
-      placementSnap={placementSnap}
       visibility={viewportVisibility}
       cameraSegmentColors={cameraSegmentColors}
+      monitorEnabled={virtualProduction.monitorEnabled}
       fullscreenActive={isFullscreen}
       playing={playing}
-      onToggleVisibility={toggleViewportVisibility}
-      onToggleCameraSegmentColors={() => setCameraSegmentColors((value) => !value)}
+      onToggleMonitor={toggleVirtualMonitor}
       onToggleFullscreen={() => setFullscreenPreview((value) => !value)}
       onTogglePlay={togglePlaybackPreview}
+      resetViewTick={resetViewTick}
       onSelectObject={(objectId) => {
         setSelectedObjectId(objectId)
         if (objectId) {
@@ -1890,15 +2382,58 @@ function App() {
         panelTheme={panelTheme}
         spaceTheme={spaceTheme}
         canUndo={undoDepth > 0}
+        viewportControls={{
+          currentTimeSec: scene.timeline.currentTimeSec,
+          cameraView,
+          timelineMode,
+          visibility: viewportVisibility,
+          cameraSegmentColors,
+          monitorEnabled: virtualProduction.monitorEnabled,
+          captureBusy,
+          playing,
+          onToggleVisibility: toggleViewportVisibility,
+          onToggleCameraSegmentColors: () => setCameraSegmentColors((value) => !value),
+          onToggleMonitor: toggleVirtualMonitor,
+          onCaptureStill: () => void captureStillFrame(),
+          onResetView: () => setResetViewTick((tick) => tick + 1),
+          onToggleFullscreen: () => setFullscreenPreview((value) => !value),
+          onTogglePlay: togglePlaybackPreview,
+        }}
         onUndo={undoSceneChange}
         onSaveLocalDocument={saveSceneToLocalFile}
-        onLoadLocalDocument={loadSceneFromLocalFile}
+        onRequestLoadLocalDocument={requestLoadLocalDocument}
         onTogglePanelTheme={() =>
           setPanelTheme((current) => (current === 'dark' ? 'light' : 'dark'))
         }
         onToggleSpaceTheme={() =>
           setSpaceTheme((current) => (current === 'dark' ? 'light' : 'dark'))
         }
+      />
+      <input
+        ref={localSceneInputRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          if (file) {
+            void loadSceneFromLocalFile(file)
+          }
+        }}
+      />
+      <input
+        ref={referenceImageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        hidden
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          if (file) {
+            void analyzeReferenceImage(file)
+          }
+        }}
       />
 
       <section className="workspace-grid">
@@ -1936,7 +2471,6 @@ function App() {
           onSelectAsset={setSelectedAssetId}
           onAddAsset={addAssetToScene}
           onDeleteImportedAsset={deleteImportedAsset}
-          onAddSceneMotionPreset={addSceneMotionPreset}
           onImportAsset={importAsset}
         />
         {renderViewport(false)}
@@ -1945,11 +2479,21 @@ function App() {
           selectedObject={selectedObject}
           selectedKeyframeId={selectedKeyframeId}
           renderJob={renderJob}
+          virtualProduction={virtualProduction}
+          shotCaptures={shotCaptures}
+          captureBusy={captureBusy}
           onUpdateObjectTransform={updateObjectTransform}
           onUpdateObjectColor={updateObjectColor}
           onUpdateObjectMotion={updateObjectMotion}
           onImportGreenScreenTexture={importGreenScreenTexture}
           onClearGreenScreenTexture={clearGreenScreenTexture}
+          onToggleVirtualMonitor={toggleVirtualMonitor}
+          onTogglePanoramaBackground={togglePanoramaBackground}
+          onImportPanoramaBackground={importPanoramaBackground}
+          onClearPanoramaBackground={clearPanoramaBackground}
+          onCaptureStill={() => void captureStillFrame()}
+          onDeleteShotCapture={deleteShotCapture}
+          onDownloadShotCapture={downloadShotCapture}
           selectedObjectBaseY={
             selectedObject ? getObjectBaseY(selectedObject, assets) : null
           }

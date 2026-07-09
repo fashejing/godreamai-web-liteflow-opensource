@@ -4490,7 +4490,7 @@ def create_app(
             "blender.html",
             {
                 "request": request,
-                "page_title": "Blender",
+                "page_title": "虚拟拍摄",
                 "active_tab": "blender",
                 "page_config": page_config,
                 "theme": page_config["theme"],
@@ -5063,6 +5063,71 @@ def create_app(
                 )
             )
         return {"items": created_items, "categories": _asset_tag_categories(history_store)}
+
+    @app.post("/api/virtual-production/screenshots")
+    async def api_virtual_production_screenshot(
+        name: str = Form(""),
+        width: int | None = Form(None),
+        height: int | None = Form(None),
+        time_sec: float | None = Form(None),
+        file: UploadFile = File(...),
+    ) -> dict:
+        settings = _current_settings()
+        storage = ensure_storage_paths(settings.storage_dir)
+        history_store = _history_store_for_storage_dir(settings.storage_dir)
+        category = "虚拟拍摄截图"
+        original_name = file.filename or "virtual-production-shot.png"
+        saved_path = save_upload_stream(
+            source=file.file,
+            filename=original_name,
+            mime_type=file.content_type,
+            target_dir=storage.uploads_dir,
+            prefix="virtual_shooting",
+        )
+        try:
+            with Image.open(saved_path) as image:
+                image.verify()
+        except (OSError, UnidentifiedImageError) as exc:
+            saved_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="截图文件不是有效图片") from exc
+
+        _ensure_library_category_dir(history_store, category)
+        display_name = _unique_library_name(
+            history_store,
+            category,
+            name or Path(original_name).stem or "虚拟拍摄截图",
+        )
+        thumbnail_path = create_image_thumbnail(
+            saved_path,
+            target_dir=storage.thumbs_dir,
+            prefix="asset_thumb",
+        )
+        asset = history_store.register_asset(
+            kind=IMAGE_KIND,
+            original_name=original_name,
+            display_name=display_name,
+            tag_category=category,
+            origin="library_upload",
+            library_visible=True,
+            path=str(saved_path),
+            thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
+            mime_type=file.content_type or mimetypes.guess_type(original_name)[0] or "image/png",
+            content_hash=file_sha256(saved_path),
+        )
+        payload = _asset_payload(
+            asset,
+            settings.storage_dir,
+            history_store=history_store,
+            source_categories=_source_asset_tag_categories(history_store),
+        )
+        payload["shot_width"] = int(width or 0)
+        payload["shot_height"] = int(height or 0)
+        payload["shot_time_sec"] = float(time_sec or 0)
+        return {
+            "asset": payload,
+            "category": category,
+            "categories": _asset_tag_categories(history_store),
+        }
 
     @app.patch("/api/assets/{asset_id}/metadata")
     async def api_asset_metadata(asset_id: str, payload: dict[str, Any]) -> dict:

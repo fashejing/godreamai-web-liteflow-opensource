@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import {
   DEFAULT_RENDER_SETTINGS,
+  DEFAULT_VIRTUAL_PRODUCTION_SETTINGS,
   type RenderSettings,
   type SceneDocument,
+  type VirtualProductionSettings,
 } from './types'
 import {
   LIGHT_MAX_DISTANCE,
@@ -182,6 +184,13 @@ export const renderSettingsSchema = z.object({
     .default('studio'),
 })
 
+const virtualProductionSchema = z.object({
+  monitorEnabled: z.boolean().default(true),
+  panoramaEnabled: z.boolean().default(false),
+  panoramaUrl: z.string().optional(),
+  panoramaName: z.string().optional(),
+})
+
 export const sceneDocumentSchema = z.object({
   version: z.literal(1),
   objects: z.array(sceneObjectSchema),
@@ -195,6 +204,7 @@ export const sceneDocumentSchema = z.object({
     mode: z.union([z.literal('motion'), z.literal('shots')]).optional(),
   }),
   renderSettings: renderSettingsSchema,
+  virtualProduction: virtualProductionSchema.optional(),
 })
 
 export const normalizeRenderSettings = (
@@ -204,11 +214,19 @@ export const normalizeRenderSettings = (
   ...value,
 })
 
+export const normalizeVirtualProductionSettings = (
+  value: Partial<VirtualProductionSettings> | undefined,
+): VirtualProductionSettings => virtualProductionSchema.parse({
+  ...DEFAULT_VIRTUAL_PRODUCTION_SETTINGS,
+  ...(value ?? {}),
+})
+
 export const validateSceneDocument = (value: unknown): SceneDocument => {
   const scene = sceneDocumentSchema.parse(value)
 
   return {
     ...scene,
     lights: scene.lights ? normalizeSceneLights(scene.lights) : scene.lights,
+    virtualProduction: normalizeVirtualProductionSettings(scene.virtualProduction),
   }
 }

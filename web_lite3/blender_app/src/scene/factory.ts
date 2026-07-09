@@ -3,6 +3,7 @@ import { defaultSceneLights } from './lights'
 import {
   DEFAULT_RENDER_SETTINGS,
   DEFAULT_TRANSFORM,
+  DEFAULT_VIRTUAL_PRODUCTION_SETTINGS,
   type AssetDefinition,
   type CameraKeyframe,
   type SceneDocument,
@@ -181,6 +182,9 @@ export const createInitialScene = (): SceneDocument => {
     },
     renderSettings: {
       ...DEFAULT_RENDER_SETTINGS,
+    },
+    virtualProduction: {
+      ...DEFAULT_VIRTUAL_PRODUCTION_SETTINGS,
     },
   }
 }

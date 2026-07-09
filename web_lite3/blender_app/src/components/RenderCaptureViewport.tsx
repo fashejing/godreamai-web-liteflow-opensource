@@ -65,6 +65,40 @@ const canvasMatchesSize = (
   canvas.width === expectedWidth &&
   canvas.height === expectedHeight
 
+const canvasHasRenderedScenePixels = (canvas: HTMLCanvasElement): boolean => {
+  try {
+    const sampleCanvas = document.createElement('canvas')
+    sampleCanvas.width = 32
+    sampleCanvas.height = 32
+    const context = sampleCanvas.getContext('2d', { willReadFrequently: true })
+
+    if (!context) {
+      return true
+    }
+
+    context.drawImage(canvas, 0, 0, sampleCanvas.width, sampleCanvas.height)
+    const pixels = context.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data
+    let minBrightness = 255
+    let maxBrightness = 0
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const alpha = pixels[index + 3]
+
+      if (alpha === 0) {
+        continue
+      }
+
+      const brightness = (pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3
+      minBrightness = Math.min(minBrightness, brightness)
+      maxBrightness = Math.max(maxBrightness, brightness)
+    }
+
+    return maxBrightness > 34 || maxBrightness - minBrightness > 10
+  } catch (_error) {
+    return true
+  }
+}
+
 const CaptureCamera = ({ sample }: { sample: CameraSample }) => {
   const cameraRef = useRef<ThreePerspectiveCamera | null>(null)
 
@@ -114,7 +148,11 @@ export const RenderCaptureViewport = forwardRef<
 
       for (let attempt = 0; attempt < 90; attempt += 1) {
         canvas = containerRef.current?.querySelector('canvas')
-        if (canvas && canvasMatchesSize(canvas, expectedWidth, expectedHeight)) {
+        if (
+          canvas &&
+          canvasMatchesSize(canvas, expectedWidth, expectedHeight) &&
+          canvasHasRenderedScenePixels(canvas)
+        ) {
           break
         }
         await waitForNextFrame()
@@ -178,6 +216,11 @@ export const RenderCaptureViewport = forwardRef<
             colors={colors}
             uiTheme={uiTheme}
             showFloor
+            showPanorama={Boolean(
+              scene.virtualProduction?.panoramaEnabled &&
+                scene.virtualProduction.panoramaUrl,
+            )}
+            panoramaUrl={scene.virtualProduction?.panoramaUrl}
           />
           <SceneObjects
             scene={scene}

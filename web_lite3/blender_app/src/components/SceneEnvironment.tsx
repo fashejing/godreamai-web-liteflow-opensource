@@ -1,6 +1,7 @@
 import { Grid } from '@react-three/drei'
+import { useLoader } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { CanvasTexture, RepeatWrapping } from 'three'
+import { BackSide, CanvasTexture, RepeatWrapping, TextureLoader } from 'three'
 import {
   INFINITE_GRID_CELL_SIZE,
   INFINITE_GRID_CELL_THICKNESS,
@@ -24,6 +25,8 @@ type SceneEnvironmentProps = {
   colors: SceneEnvironmentColors
   uiTheme: UiTheme
   showFloor: boolean
+  showPanorama?: boolean
+  panoramaUrl?: string
 }
 
 type FloorStyle = {
@@ -38,6 +41,8 @@ const textureRepeatByMaterial: Partial<Record<FloorMaterial, number>> = {
   grass: VISUAL_GROUND_SIZE / 20,
   asphalt: VISUAL_GROUND_SIZE / 24,
 }
+
+const panoramaDomeRadius = 1500
 
 const pseudoRandom = (seed: number): number => {
   const value = Math.sin(seed * 12.9898) * 43758.5453
@@ -182,11 +187,29 @@ const getFloorStyle = (
   }
 }
 
+const PanoramaDome = ({ url }: { url: string }) => {
+  const texture = useLoader(TextureLoader, url)
+
+  return (
+    <mesh rotation={[0, Math.PI, 0]} raycast={() => null}>
+      <sphereGeometry args={[panoramaDomeRadius, 96, 48]} />
+      <meshBasicMaterial
+        map={texture}
+        side={BackSide}
+        fog={false}
+        toneMapped={false}
+      />
+    </mesh>
+  )
+}
+
 export const SceneEnvironment = ({
   renderSettings,
   colors,
   uiTheme,
   showFloor,
+  showPanorama = false,
+  panoramaUrl,
 }: SceneEnvironmentProps) => {
   const floorMaterial = renderSettings.fillWhiteGround
     ? 'white'
@@ -201,6 +224,7 @@ export const SceneEnvironment = ({
 
   return (
     <>
+      {showPanorama && panoramaUrl ? <PanoramaDome url={panoramaUrl} /> : null}
       {!renderSettings.hideGrid ? (
         <Grid
           args={[1, 1]}

@@ -118,6 +118,15 @@ test("buildCrossKindEmptyState explains cross-kind history availability", () => 
   );
 });
 
+test("virtual shooting hides unfinished image staging entry points", () => {
+  const toolbar = fs.readFileSync(new URL("../web_lite3/blender_app/src/components/Toolbar.tsx", import.meta.url), "utf8");
+  const inspector = fs.readFileSync(new URL("../web_lite3/blender_app/src/components/Inspector.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(toolbar, /识图搭景/);
+  assert.doesNotMatch(toolbar, /onAnalyzeReferenceImage/);
+  assert.doesNotMatch(inspector, /识图搭景/);
+  assert.doesNotMatch(inspector, /onAnalyzeReferenceImage/);
+});
+
 test("workspace.js keeps only one top-level declaration for critical record functions", () => {
   const source = fs.readFileSync(new URL("../web_lite3/static/js/workspace.js", import.meta.url), "utf8");
   const expectedSingleDeclarations = [
@@ -473,6 +482,16 @@ test("canvas image results can be added to the library canvas category", () => {
   assert.match(source, /sourceNode[?][.]type !== "image_result"/);
   assert.match(source, /function confirmAddToLibrary\(\)/);
   assert.match(source, /\/api\/canvas\/result-to-library/);
+});
+
+test("canvas image context can create a 720 panorama task", () => {
+  const source = fs.readFileSync(new URL("../web_lite3/static/js/canvas.js", import.meta.url), "utf8");
+  const template = fs.readFileSync(new URL("../web_lite3/templates/canvas.html", import.meta.url), "utf8");
+  assert.match(template, /data-canvas-menu-action="generate-720-panorama"/);
+  assert.match(source, /const PANORAMA_720_PROMPT = /);
+  assert.match(source, /function createPanorama720Task\(/);
+  assert.match(source, /canvas_template: "panorama_720"/);
+  assert.match(source, /closestSupportedAspectRatioFromRatio\(model, "2:1"\)/);
 });
 
 test("canvas image picker supports local upload and fast deduped paging", () => {

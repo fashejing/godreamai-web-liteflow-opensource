@@ -197,11 +197,13 @@ def test_pages_load(tmp_path):
     assert 'class="blender-app-frame"' in blender_page.text
     assert 'id="blenderAssetUploadButton"' in blender_page.text
     assert 'src="/static/js/blender_host.js?v=' in blender_page.text
+    assert "虚拟拍摄" in blender_page.text
     assert "Poly Haven" in blender_page.text
     assert "Sketchfab" in blender_page.text
     assert "BlenderKit" in blender_page.text
     assert "Quaternius" in blender_page.text
     assert "Kenney" in blender_page.text
+    assert 'data-blender-command=' not in blender_page.text
     assert 'src="/blender/app"' in blender_page.text
     assert "井鸽AI影视套件" in blender_page.text
     assert "GoDreamAI-Blender" not in blender_page.text
@@ -317,6 +319,21 @@ def test_blender_assets_and_export(tmp_path):
     assert texture_payload["name"] == "plate"
     assert texture_payload["url"].startswith("/textures/")
     assert client.get(texture_payload["url"]).status_code == 200
+
+    screenshot_buffer = BytesIO()
+    Image.new("RGB", (16, 9), (120, 120, 120)).save(screenshot_buffer, format="PNG")
+    screenshot = client.post(
+        "/api/virtual-production/screenshots",
+        data={"name": "测试截图", "width": "1920", "height": "1080", "time_sec": "1.25"},
+        files={"file": ("shot.png", screenshot_buffer.getvalue(), "image/png")},
+    )
+    assert screenshot.status_code == 200
+    screenshot_payload = screenshot.json()
+    assert screenshot_payload["category"] == "虚拟拍摄截图"
+    assert screenshot_payload["asset"]["tag_category"] == "虚拟拍摄截图"
+    library_payload = client.get("/api/library/assets?tag_category=虚拟拍摄截图").json()
+    assert library_payload["total"] == 1
+    assert library_payload["items"][0]["display_name"] == "测试截图"
 
     invalid_render = client.post("/api/render-jobs", json={"version": 1, "objects": []})
     assert invalid_render.status_code == 400

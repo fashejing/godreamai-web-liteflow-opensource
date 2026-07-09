@@ -2,7 +2,6 @@ import { Box, Plus, Search, Trash2, Upload } from 'lucide-react'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { assetCategoryLabels } from '../scene/assets'
 import { supportedImportAccept, supportedImportLabel } from '../scene/importedFormats'
-import { sceneMotionPresets } from '../scene/objectMotion'
 import type { AssetCategory, AssetDefinition } from '../scene/types'
 
 type AssetPanelProps = {
@@ -13,7 +12,6 @@ type AssetPanelProps = {
   onSelectAsset: (assetId: string) => void
   onAddAsset: (assetId: string) => void
   onDeleteImportedAsset: (assetId: string) => void
-  onAddSceneMotionPreset: (presetId: string) => void
   onImportAsset: (file: File) => void
 }
 
@@ -44,7 +42,6 @@ export const AssetPanel = ({
   onSelectAsset,
   onAddAsset,
   onDeleteImportedAsset,
-  onAddSceneMotionPreset,
   onImportAsset,
 }: AssetPanelProps) => {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -115,27 +112,6 @@ export const AssetPanel = ({
           <Plus size={15} />
           放入选中的白模
         </button>
-
-        <div className="scene-motion-panel">
-          <div className="asset-group-title">
-            <span>导演运动</span>
-            <span>{sceneMotionPresets.length}</span>
-          </div>
-          <div className="scene-motion-list">
-            {sceneMotionPresets.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                className="scene-motion-button"
-                title={preset.description}
-                onClick={() => onAddSceneMotionPreset(preset.id)}
-              >
-                <span>{preset.label}</span>
-                <small>{preset.description}</small>
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div className="asset-groups">
           {categories.map((category) => {
