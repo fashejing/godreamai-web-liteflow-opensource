@@ -31,6 +31,7 @@ type ToolDockProps = {
   onToggleSnap: () => void
   onTogglePlay: () => void
   onAddKeyframe: () => void
+  onConnectCameraPath: () => void
   onSmoothCameraRate: () => void
   onSmoothCameraPath: () => void
   onApplyCinematicPreset: (presetId: string) => void
@@ -56,6 +57,7 @@ export const ToolDock = ({
   onToggleSnap,
   onTogglePlay,
   onAddKeyframe,
+  onConnectCameraPath,
   onSmoothCameraRate,
   onSmoothCameraPath,
   onApplyCinematicPreset,
@@ -142,6 +144,15 @@ export const ToolDock = ({
         <button type="button" className="dock-button accent-camera" onClick={onAddKeyframe}>
           <Camera size={15} />
           添加镜头点
+        </button>
+        <button
+          type="button"
+          className="dock-button accent-path"
+          onClick={onConnectCameraPath}
+          disabled={!canSmoothCamera}
+        >
+          <Route size={15} />
+          一键连线
         </button>
         <button
           type="button"

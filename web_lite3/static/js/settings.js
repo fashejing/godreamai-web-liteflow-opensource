@@ -18,20 +18,6 @@ function colorForIndex(index) {
   return `hsl(${hue} 68% 48%)`;
 }
 
-function populateApiKeyHistory(selectId, items = []) {
-  const select = $(selectId);
-  if (!select) {
-    return;
-  }
-  select.innerHTML = "<option value=\"\">选择已保存的 Key</option>";
-  for (const item of Array.isArray(items) ? items : []) {
-    const option = document.createElement("option");
-    option.value = item.value;
-    option.textContent = item.label;
-    select.appendChild(option);
-  }
-}
-
 function normalizePromptFontSize(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -62,8 +48,6 @@ function fillForm() {
   $("#recordCardSizeSelect").value = settings.record_card_size || "medium";
   $("#themeSelect").value = settings.theme || "light";
   $("#autoOpenBrowser").checked = Boolean(settings.auto_open_browser);
-  populateApiKeyHistory("#volcengineApiKeyHistorySelect", config.masked_api_key_history?.volcengine || []);
-  populateApiKeyHistory("#klingApiKeyHistorySelect", config.masked_api_key_history?.kling || []);
   syncPromptFontSizeDisplay();
 }
 
@@ -90,8 +74,6 @@ function collectForm() {
     storage_dir: $("#storageDir").value.trim(),
     volcengine_api_key: $("#volcengineApiKey").value.trim(),
     kling_api_key: $("#klingApiKey").value.trim(),
-    google_api_key: "",
-    openai_api_key: "",
   };
 }
 
@@ -570,12 +552,6 @@ $("#settingsForm").addEventListener("submit", async (event) => {
     });
     Object.assign(settings, result.settings || {});
     config.settings = settings;
-    config.masked_api_key_history = {
-      volcengine: (settings.volcengine_api_key_history || []).map((value) => ({
-        value,
-        label: value.length > 8 ? `${value.slice(0, 3)}****${value.slice(-4)}` : value,
-      })),
-    };
     applyTheme(result.settings.theme);
     await loadNetworkStatus();
     window.dispatchEvent(new CustomEvent("godreamai-settings-change", {
@@ -620,20 +596,6 @@ $("#pickStorageDirButton").addEventListener("click", async () => {
     showToast(String(error.message || error));
   } finally {
     button.disabled = false;
-  }
-});
-
-$("#volcengineApiKeyHistorySelect").addEventListener("change", () => {
-  const value = $("#volcengineApiKeyHistorySelect").value;
-  if (value) {
-    $("#volcengineApiKey").value = value;
-  }
-});
-
-$("#klingApiKeyHistorySelect").addEventListener("change", () => {
-  const value = $("#klingApiKeyHistorySelect").value;
-  if (value) {
-    $("#klingApiKey").value = value;
   }
 });
 

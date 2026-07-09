@@ -25,13 +25,17 @@ import {
 } from './scene/cameraPresets'
 import {
   clampTimeToDuration,
+  connectCameraKeyframes,
   getFrameCount,
+  getNextCameraKeyframeTime,
   getTimelineDuration,
   getTimelineMode,
   normalizeCameraMotionSettings,
+  retimeCameraKeyframes,
   sampleCameraAtTime,
   smoothCameraKeyframes,
   smoothCameraRateKeyframes,
+  sortKeyframes,
   type CameraSample,
 } from './scene/camera'
 import {
@@ -63,6 +67,7 @@ import type {
   CameraMotionSettings,
   CameraCurveType,
   CameraKeyframe,
+  FloorMaterial,
   ObjectMotion,
   RenderJob,
   RenderSettings,
@@ -109,6 +114,22 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const evenInteger = (value: number): number => Math.max(2, Math.round(value) - (Math.round(value) % 2))
 
+const floorMaterialValues: FloorMaterial[] = [
+  'studio',
+  'white',
+  'checker',
+  'concrete',
+  'sand',
+  'grass',
+  'asphalt',
+]
+
+const normalizeFloorMaterial = (
+  value: RenderSettings['floorMaterial'] | undefined,
+): FloorMaterial => floorMaterialValues.includes(value as FloorMaterial)
+  ? value as FloorMaterial
+  : 'studio'
+
 const normalizeRenderSettingsForUi = (
   settings: RenderSettings,
 ): RenderSettings => ({
@@ -119,6 +140,7 @@ const normalizeRenderSettingsForUi = (
   format: 'mp4',
   fillWhiteGround: Boolean(settings.fillWhiteGround),
   hideGrid: Boolean(settings.hideGrid),
+  floorMaterial: normalizeFloorMaterial(settings.floorMaterial),
 })
 
 const nextPlacementOffset = (objectCount: number): number =>
@@ -219,6 +241,7 @@ function App() {
   const [viewportVisibility, setViewportVisibility] = useState<ViewportVisibility>(
     defaultViewportVisibility,
   )
+  const [cameraSegmentColors, setCameraSegmentColors] = useState(false)
   const [snapToGrid, setSnapToGrid] = useState(true)
   const [placementSnap, setPlacementSnap] = useState(true)
   const [playing, setPlaying] = useState(false)
@@ -461,6 +484,58 @@ function App() {
     setSelectedObjectId(object.id)
     setSelectedAssetId(asset.id)
     setSystemMessage(`${asset.label} placed`)
+  }
+
+  const deleteImportedAsset = async (assetId: string) => {
+    const asset = assets.find(
+      (candidate) => candidate.id === assetId && candidate.kind === 'imported',
+    )
+
+    if (!asset) {
+      return
+    }
+
+    const removedObjectCount = scene.objects.filter(
+      (object) => object.assetId === assetId,
+    ).length
+    const removesSelectedObject = scene.objects.some(
+      (object) => object.id === selectedObjectId && object.assetId === assetId,
+    )
+
+    setSystemMessage(`正在删除导入模型：${asset.label}`)
+
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok && response.status !== 404) {
+        const text = await response.text()
+        throw new Error(text || `${response.status} ${response.statusText}`)
+      }
+
+      setAssets((current) => current.filter((candidate) => candidate.id !== assetId))
+      commitScene((current) => ({
+        ...current,
+        objects: current.objects.filter((object) => object.assetId !== assetId),
+      }))
+
+      if (removesSelectedObject) {
+        setSelectedObjectId(null)
+      }
+
+      setSelectedAssetId((current) =>
+        current === assetId ? builtInAssets[0].id : current,
+      )
+      setSystemMessage(
+        removedObjectCount > 0
+          ? `已删除导入模型：${asset.label}，并移除 ${removedObjectCount} 个场景实例`
+          : `已删除导入模型：${asset.label}`,
+      )
+    } catch (error) {
+      setSystemMessage(
+        `删除导入模型失败：${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
 
   const updateObjectTransform = (objectId: string, transform: Transform) => {
@@ -947,33 +1022,285 @@ function App() {
     const sample =
       viewportCameraRef.current ??
       sampleCameraAtTime(scene, scene.timeline.currentTimeSec)
-    const keyframe = createCameraKeyframe(
-      scene.timeline.currentTimeSec,
-      sample.position,
-      sample.target,
-      sample.fov,
-    )
+    let addedKeyframeId: string | null = null
+    let addedTimeSec = 0
 
-    commitScene((current) => ({
-      ...current,
-      cameras: current.cameras.map((camera) =>
-        camera.id === current.activeCameraId
-          ? {
-              ...camera,
-              keyframes: [
-                ...camera.keyframes.filter(
-                  (existing) =>
-                    Math.abs(existing.timeSec - keyframe.timeSec) > 0.05,
-                ),
-                keyframe,
-              ],
-            }
-          : camera,
-      ),
-    }))
-    setSelectedKeyframeId(keyframe.id)
+    commitScene((current) => {
+      const activeCamera = current.cameras.find(
+        (camera) => camera.id === current.activeCameraId,
+      )
+      const timeSec = getNextCameraKeyframeTime(
+        activeCamera?.keyframes ?? [],
+        current.timeline.currentTimeSec,
+        current.renderSettings.durationSec,
+      )
+      const nextKeyframe = createCameraKeyframe(
+        timeSec,
+        sample.position,
+        sample.target,
+        sample.fov,
+      )
+      addedKeyframeId = nextKeyframe.id
+      addedTimeSec = nextKeyframe.timeSec
+
+      return {
+        ...current,
+        cameras: current.cameras.map((camera) =>
+          camera.id === current.activeCameraId
+            ? {
+                ...camera,
+                keyframes: [...camera.keyframes, nextKeyframe],
+              }
+            : camera,
+        ),
+        renderSettings: {
+          ...current.renderSettings,
+          durationSec: Math.max(current.renderSettings.durationSec, timeSec),
+        },
+      }
+    })
+    setSelectedKeyframeId(addedKeyframeId)
     setSelectedObjectId(null)
-    setSystemMessage(`已记录 ${keyframe.timeSec.toFixed(2)}s 的镜头点，可拖动蓝点调整轨迹`)
+    setSystemMessage(
+      `已添加 ${addedTimeSec.toFixed(2)}s 的镜头点，可继续换角度添加`,
+    )
+  }
+
+  const connectCameraPath = () => {
+    let connectedCount = 0
+    let connectedDurationSec = scene.renderSettings.durationSec
+
+    commitScene((current) => {
+      const activeCamera = current.cameras.find(
+        (camera) => camera.id === current.activeCameraId,
+      )
+
+      if (!activeCamera || activeCamera.keyframes.length < 2) {
+        return current
+      }
+
+      const connected = connectCameraKeyframes(
+        activeCamera.keyframes,
+        current.renderSettings.durationSec,
+      )
+      connectedCount = connected.keyframes.length
+      connectedDurationSec = connected.durationSec
+
+      return {
+        ...current,
+        cameras: current.cameras.map((camera) =>
+          camera.id === current.activeCameraId
+            ? {
+                ...camera,
+                keyframes: connected.keyframes,
+              }
+            : camera,
+        ),
+        renderSettings: {
+          ...current.renderSettings,
+          durationSec: connected.durationSec,
+        },
+        timeline: {
+          ...current.timeline,
+          mode: 'motion',
+          currentTimeSec: 0,
+        },
+      }
+    })
+    setPlaying(false)
+    setSystemMessage(
+      connectedCount >= 2
+        ? `已一键连线 ${connectedCount} 个镜头点，形成 ${connectedDurationSec.toFixed(1)}s 轨迹`
+        : '至少需要 2 个镜头点才能一键连线',
+    )
+  }
+
+  const deleteCameraKeyframe = (keyframeId: string) => {
+    let deleted = false
+    let nextSelectedKeyframeId = selectedKeyframeId
+
+    commitScene((current) => {
+      const activeCamera = current.cameras.find(
+        (camera) => camera.id === current.activeCameraId,
+      )
+
+      if (!activeCamera || activeCamera.keyframes.length <= 1) {
+        return current
+      }
+
+      const sorted = sortKeyframes(activeCamera.keyframes)
+      const deleteIndex = sorted.findIndex((keyframe) => keyframe.id === keyframeId)
+
+      if (deleteIndex === -1) {
+        return current
+      }
+
+      const remaining = sorted.filter((keyframe) => keyframe.id !== keyframeId)
+      deleted = true
+
+      if (
+        selectedKeyframeId === keyframeId ||
+        !remaining.some((keyframe) => keyframe.id === selectedKeyframeId)
+      ) {
+        nextSelectedKeyframeId =
+          remaining[Math.min(deleteIndex, remaining.length - 1)]?.id ?? null
+      }
+
+      return {
+        ...current,
+        cameras: current.cameras.map((camera) =>
+          camera.id === current.activeCameraId
+            ? {
+                ...camera,
+                keyframes: remaining,
+              }
+            : camera,
+        ),
+      }
+    })
+
+    if (deleted) {
+      setSelectedKeyframeId(nextSelectedKeyframeId)
+      setSelectedObjectId(null)
+      setSystemMessage('已删除镜头点')
+    } else {
+      setSystemMessage('至少保留 1 个镜头点')
+    }
+  }
+
+  const reorderCameraKeyframe = (
+    draggedKeyframeId: string,
+    targetKeyframeId: string,
+  ) => {
+    if (draggedKeyframeId === targetKeyframeId) {
+      return
+    }
+
+    let reordered = false
+
+    commitScene((current) => {
+      const activeCamera = current.cameras.find(
+        (camera) => camera.id === current.activeCameraId,
+      )
+
+      if (!activeCamera) {
+        return current
+      }
+
+      const sorted = sortKeyframes(activeCamera.keyframes)
+      const fromIndex = sorted.findIndex(
+        (keyframe) => keyframe.id === draggedKeyframeId,
+      )
+      const targetIndex = sorted.findIndex(
+        (keyframe) => keyframe.id === targetKeyframeId,
+      )
+
+      if (fromIndex === -1 || targetIndex === -1) {
+        return current
+      }
+
+      const nextOrder = [...sorted]
+      const [movedKeyframe] = nextOrder.splice(fromIndex, 1)
+      nextOrder.splice(targetIndex, 0, movedKeyframe)
+      const retimed = retimeCameraKeyframes(
+        nextOrder,
+        current.renderSettings.durationSec,
+      )
+      reordered = true
+
+      return {
+        ...current,
+        cameras: current.cameras.map((camera) =>
+          camera.id === current.activeCameraId
+            ? {
+                ...camera,
+                keyframes: retimed.keyframes,
+              }
+            : camera,
+        ),
+        renderSettings: {
+          ...current.renderSettings,
+          durationSec: retimed.durationSec,
+        },
+        timeline: {
+          ...current.timeline,
+          mode: 'motion',
+          currentTimeSec: clampTimeToDuration(
+            current.timeline.currentTimeSec,
+            retimed.durationSec,
+          ),
+        },
+      }
+    })
+
+    if (reordered) {
+      setSelectedKeyframeId(draggedKeyframeId)
+      setSelectedObjectId(null)
+      setSystemMessage('已调整镜头点顺序，并重新分配运镜时间')
+    }
+  }
+
+  const toggleCameraSegmentConnection = (fromKeyframeId: string) => {
+    let updated = false
+    let segmentConnected = true
+    let segmentLabel = '该段'
+
+    commitScene((current) => {
+      const activeCamera = current.cameras.find(
+        (camera) => camera.id === current.activeCameraId,
+      )
+
+      if (!activeCamera) {
+        return current
+      }
+
+      const sorted = sortKeyframes(activeCamera.keyframes)
+      const segmentIndex = sorted.findIndex(
+        (keyframe) => keyframe.id === fromKeyframeId,
+      )
+
+      if (segmentIndex === -1 || segmentIndex >= sorted.length - 1) {
+        return current
+      }
+
+      const fromKeyframe = sorted[segmentIndex]
+      segmentConnected = fromKeyframe.connectToNext === false
+      segmentLabel = `点 ${segmentIndex + 1} 到点 ${segmentIndex + 2}`
+      updated = true
+
+      return {
+        ...current,
+        cameras: current.cameras.map((camera) =>
+          camera.id === current.activeCameraId
+            ? {
+                ...camera,
+                keyframes: camera.keyframes.map((keyframe) =>
+                  keyframe.id === fromKeyframeId
+                    ? {
+                        ...keyframe,
+                        connectToNext: segmentConnected,
+                      }
+                    : keyframe,
+                ),
+              }
+            : camera,
+        ),
+        timeline: {
+          ...current.timeline,
+          mode: 'motion',
+        },
+      }
+    })
+
+    if (!updated) {
+      return
+    }
+
+    setSystemMessage(
+      segmentConnected
+        ? `已连线${segmentLabel}`
+        : `已断开${segmentLabel}的运镜轨迹`,
+    )
   }
 
   const clearCameraPath = () => {
@@ -1517,9 +1844,11 @@ function App() {
       snapToGrid={snapToGrid}
       placementSnap={placementSnap}
       visibility={viewportVisibility}
+      cameraSegmentColors={cameraSegmentColors}
       fullscreenActive={isFullscreen}
       playing={playing}
       onToggleVisibility={toggleViewportVisibility}
+      onToggleCameraSegmentColors={() => setCameraSegmentColors((value) => !value)}
       onToggleFullscreen={() => setFullscreenPreview((value) => !value)}
       onTogglePlay={togglePlaybackPreview}
       onSelectObject={(objectId) => {
@@ -1536,7 +1865,7 @@ function App() {
       onSelectKeyframe={(keyframeId) => {
         setSelectedKeyframeId(keyframeId)
         setSelectedObjectId(null)
-        setSystemMessage('已选中镜头点，拖动蓝点即可改运镜轨迹')
+        setSystemMessage('已选中镜头点，可拖动蓝点改位置，点击方向按钮改朝向')
       }}
       onMoveKeyframePosition={moveKeyframePosition}
       onMoveKeyframeTarget={moveKeyframeTarget}
@@ -1593,6 +1922,7 @@ function App() {
               onToggleSnap={() => setSnapToGrid((value) => !value)}
               onTogglePlay={togglePlaybackPreview}
               onAddKeyframe={addCameraKeyframe}
+              onConnectCameraPath={connectCameraPath}
               onSmoothCameraRate={smoothCameraRate}
               onSmoothCameraPath={smoothCameraPath}
               onApplyCinematicPreset={applyCinematicPreset}
@@ -1605,6 +1935,7 @@ function App() {
           }
           onSelectAsset={setSelectedAssetId}
           onAddAsset={addAssetToScene}
+          onDeleteImportedAsset={deleteImportedAsset}
           onAddSceneMotionPreset={addSceneMotionPreset}
           onImportAsset={importAsset}
         />
@@ -1635,6 +1966,9 @@ function App() {
             setSelectedKeyframeId(keyframeId)
             setSelectedObjectId(null)
           }}
+          onDeleteKeyframe={deleteCameraKeyframe}
+          onReorderKeyframe={reorderCameraKeyframe}
+          onToggleSegmentConnection={toggleCameraSegmentConnection}
           onMoveKeyframePosition={moveKeyframePosition}
           onMoveKeyframeTarget={moveKeyframeTarget}
           onToggleAimAnchor={toggleAimAnchor}

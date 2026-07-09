@@ -18,8 +18,10 @@ APP_BRAND_SIDEBAR_SUBTITLE = f"{APP_BRAND_EDITION}{APP_BRAND_SUBTITLE}"
 APP_DISPLAY_NAME = f"{APP_BRAND_TITLE} {APP_BRAND_SUBTITLE}"
 APP_NAME = APP_DISPLAY_NAME
 APP_HEALTH_NAME = APP_DISPLAY_NAME
-APP_HOME_ENV = "GODREAMAI_PLUS_HOME"
-APP_HOME_DEFAULT_DIRNAME = ".godreamai-plus"
+HTTP_USER_AGENT = "GoDreamAI-OpenSource-WebUI/0.1"
+LAUNCHER_USER_AGENT = "GoDreamAI-OpenSource-Launcher/0.1"
+APP_HOME_ENV = "GODREAMAI_OPENSOURCE_HOME"
+APP_HOME_DEFAULT_DIRNAME = ".godreamai-opensource"
 
 
 def release_version_from_env(env: Mapping[str, str] | None = None) -> str:
@@ -133,11 +135,16 @@ SEEDREAM_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"]
 KLING_IMAGE_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9"]
 KLING_IMAGE_OMNI_ASPECT_RATIOS = [*KLING_IMAGE_ASPECT_RATIOS, "auto"]
 SEEDREAM_5_SIZE_OPTIONS = [_option("2K"), _option("3K"), _option("4K")]
+SEEDREAM_5_PRO_SIZE_OPTIONS = [_option("1K"), _option("2K")]
 SEEDREAM_4_5_SIZE_OPTIONS = [_option("2K"), _option("4K")]
 KLING_IMAGE_3_SIZE_OPTIONS = [_option("1k", "1K"), _option("2k", "2K")]
 KLING_IMAGE_3_OMNI_SIZE_OPTIONS = [_option("1k", "1K"), _option("2k", "2K"), _option("4k", "4K")]
 SEEDREAM_MAX_INPUT_IMAGES = 14
 SEEDREAM_MAX_TOTAL_IMAGES = 15
+SEEDREAM_PRO_MAX_INPUT_IMAGES = 10
+SEEDREAM_PRO_MAX_TOTAL_IMAGES = 11
+SEEDREAM_PRO_MIN_TOTAL_PIXELS = 1024 * 1024
+SEEDREAM_PRO_MAX_TOTAL_PIXELS = 2048 * 2048
 SEEDREAM_MIN_TOTAL_PIXELS = 2560 * 1440
 SEEDREAM_MAX_TOTAL_PIXELS = 4096 * 4096
 SEEDREAM_MIN_EDGE = 15
@@ -288,6 +295,35 @@ IMAGE_MODELS = {
         ],
         "pricing_hint": IMAGE_PRICING_HINT,
     },
+    "seedream_v5_0_pro": {
+        "label": "Seedream 5.0 Pro",
+        "provider": "volcengine",
+        "api_model_id": "doubao-seedream-5-0-pro-260628",
+        "supported_modes": SEEDREAM_IMAGE_MODES,
+        "mode_labels": SEEDREAM_IMAGE_MODE_LABELS,
+        "aspect_ratios": SEEDREAM_ASPECT_RATIOS,
+        "default_aspect_ratio": "1:1",
+        "default_size": "1K",
+        "size_options": SEEDREAM_5_PRO_SIZE_OPTIONS,
+        "size_options_by_ratio": _repeat_size_options(SEEDREAM_ASPECT_RATIOS, SEEDREAM_5_PRO_SIZE_OPTIONS),
+        "supports_flexible_size": True,
+        "min_total_pixels": SEEDREAM_PRO_MIN_TOTAL_PIXELS,
+        "max_total_pixels": SEEDREAM_PRO_MAX_TOTAL_PIXELS,
+        "min_edge": SEEDREAM_MIN_EDGE,
+        "max_aspect_ratio": SEEDREAM_MAX_ASPECT_RATIO,
+        "max_input_images": SEEDREAM_PRO_MAX_INPUT_IMAGES,
+        "max_total_images": SEEDREAM_PRO_MAX_TOTAL_IMAGES,
+        "max_count": 1,
+        "supports_web_search": False,
+        "supports_output_format": True,
+        "supports_sequential_generation": False,
+        "default_output_format": "jpeg",
+        "output_formats": [
+            _option("jpeg", "JPEG"),
+            _option("png", "PNG"),
+        ],
+        "pricing_hint": IMAGE_PRICING_HINT,
+    },
     "seedream_v4_5": {
         "label": "Seedream 4.5",
         "provider": "volcengine",
@@ -359,6 +395,21 @@ VIDEO_MODELS = {
         "label": "Seedance 2.0 Fast",
         "provider": "volcengine",
         "api_model_id": "doubao-seedance-2-0-fast-260128",
+        "supported_scenes": list(VIDEO_SCENES.keys()),
+        "scene_labels": SEEDANCE_VIDEO_SCENE_LABELS,
+        "supported_resolutions": ["480p", "720p"],
+        "supported_ratios": ["adaptive", "16:9", "9:16", "4:3", "1:1", "3:4", "21:9"],
+        "supported_durations": list(range(4, 16)),
+        "supports_audio": True,
+        "supports_web_search": True,
+        "supports_watermark": True,
+        "supports_trusted_assets": True,
+        "pricing_hint": VIDEO_PRICING_HINT,
+    },
+    "seedance_2_0_mini": {
+        "label": "Seedance 2.0 Mini",
+        "provider": "volcengine",
+        "api_model_id": "doubao-seedance-2-0-mini-260615",
         "supported_scenes": list(VIDEO_SCENES.keys()),
         "scene_labels": SEEDANCE_VIDEO_SCENE_LABELS,
         "supported_resolutions": ["480p", "720p"],

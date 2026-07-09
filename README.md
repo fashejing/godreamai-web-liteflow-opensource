@@ -93,13 +93,13 @@ Blender 场景文件支持保存到本地，也支持从本地文件载入。第
 默认数据目录：
 
 ```text
-~/.godreamai-plus
+~/.godreamai-opensource
 ```
 
 如需覆盖：
 
 ```bash
-GODREAMAI_PLUS_HOME=/custom/path python3.11 -m web_lite3
+GODREAMAI_OPENSOURCE_HOME=/custom/path python3.11 -m web_lite3
 ```
 
 ## 测试

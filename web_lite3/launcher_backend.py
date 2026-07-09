@@ -15,7 +15,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from web_lite3.constants import APP_HEALTH_NAME, APP_NAME, DEFAULT_HOST, DEFAULT_PORT
+from web_lite3.constants import APP_HEALTH_NAME, APP_NAME, DEFAULT_HOST, DEFAULT_PORT, LAUNCHER_USER_AGENT
 from web_lite3.runtime_identity import compute_runtime_id
 
 
@@ -412,7 +412,7 @@ class LauncherBackend:
         )
 
     def _probe_running_project(self) -> ProbeResult:
-        request = urllib.request.Request(self.health_url, headers={"User-Agent": f"{APP_NAME} Launcher"})
+        request = urllib.request.Request(self.health_url, headers={"User-Agent": LAUNCHER_USER_AGENT})
         try:
             with self._open_probe_request(request, timeout=0.8) as response:
                 payload = json.loads(response.read(4096).decode("utf-8", errors="ignore"))

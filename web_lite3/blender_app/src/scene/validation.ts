@@ -102,6 +102,7 @@ const cameraKeyframeSchema = z.object({
   shotDurationSec: z.number().min(0.5).max(30).optional(),
   speedToNext: z.number().min(0.25).max(3).optional(),
   speedCurveToNext: speedCurveValueSchema.optional(),
+  connectToNext: z.boolean().optional(),
   curveToNext: z
     .union([
       z.literal('linear'),
@@ -168,6 +169,17 @@ export const renderSettingsSchema = z.object({
   format: z.literal('mp4'),
   fillWhiteGround: z.boolean().default(false),
   hideGrid: z.boolean().default(false),
+  floorMaterial: z
+    .union([
+      z.literal('studio'),
+      z.literal('white'),
+      z.literal('checker'),
+      z.literal('concrete'),
+      z.literal('sand'),
+      z.literal('grass'),
+      z.literal('asphalt'),
+    ])
+    .default('studio'),
 })
 
 export const sceneDocumentSchema = z.object({

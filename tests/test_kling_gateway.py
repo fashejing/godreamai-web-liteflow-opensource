@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from web_lite3.constants import HTTP_USER_AGENT
 from web_lite3.kling import (
     KLING_BASE_URL,
     KLING_IMAGE_GENERATION_PATH,
+    KlingImageGateway,
+    KlingVideoGateway,
     KLING_IMAGE_OMNI_PATH,
     KLING_TURBO_IMAGE_TO_VIDEO_PATH,
     KLING_TURBO_QUERY_PATH,
@@ -11,6 +14,17 @@ from web_lite3.kling import (
     build_kling_video_payload,
 )
 from web_lite3.schemas import ImageGenerateRequest, VideoGenerateRequest
+
+
+def test_kling_user_agents_are_http_header_safe():
+    gateways = [
+        KlingImageGateway("kling-key"),
+        KlingVideoGateway("kling-key"),
+    ]
+    for gateway in gateways:
+        user_agent = gateway._headers()["User-Agent"]
+        assert user_agent == HTTP_USER_AGENT
+        assert user_agent.encode("latin-1").decode("latin-1") == user_agent
 
 
 def test_kling_image_generation_uses_domestic_payload_shape():

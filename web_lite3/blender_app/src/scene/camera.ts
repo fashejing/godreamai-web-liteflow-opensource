@@ -24,6 +24,8 @@ export const DEFAULT_CAMERA_MOTION: CameraMotionSettings = {
 export const DEFAULT_SHOT_DURATION_SEC = 2
 export const MIN_SHOT_DURATION_SEC = 0.5
 export const MAX_SHOT_DURATION_SEC = 30
+const CAMERA_KEYFRAME_TIME_EPSILON = 0.05
+const AUTO_CAMERA_KEYFRAME_STEP_SEC = 2
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max)
@@ -332,6 +334,90 @@ export const sortKeyframes = (
   keyframes: CameraKeyframe[],
 ): CameraKeyframe[] => [...keyframes].sort((a, b) => a.timeSec - b.timeSec)
 
+export const isCameraSegmentConnected = (keyframe: CameraKeyframe): boolean =>
+  keyframe.connectToNext !== false
+
+export const retimeCameraKeyframes = (
+  keyframes: CameraKeyframe[],
+  durationSec: number,
+): { keyframes: CameraKeyframe[]; durationSec: number } => {
+  if (keyframes.length < 2) {
+    return {
+      keyframes,
+      durationSec,
+    }
+  }
+
+  const connectedDurationSec = Math.max(
+    durationSec,
+    (keyframes.length - 1) * AUTO_CAMERA_KEYFRAME_STEP_SEC,
+  )
+  const lastIndex = keyframes.length - 1
+
+  return {
+    durationSec: connectedDurationSec,
+    keyframes: keyframes.map((keyframe, index) => ({
+      ...keyframe,
+      timeSec: Number(((connectedDurationSec * index) / lastIndex).toFixed(2)),
+    })),
+  }
+}
+
+export const getNextCameraKeyframeTime = (
+  keyframes: CameraKeyframe[],
+  desiredTimeSec: number,
+  durationSec: number,
+): number => {
+  const latestTimeSec = keyframes.reduce(
+    (latest, keyframe) => Math.max(latest, keyframe.timeSec),
+    0,
+  )
+  const maxSearchTimeSec = Math.max(durationSec, latestTimeSec, desiredTimeSec, 0)
+  const timeIsAvailable = (timeSec: number) =>
+    keyframes.every(
+      (keyframe) =>
+        Math.abs(keyframe.timeSec - timeSec) > CAMERA_KEYFRAME_TIME_EPSILON,
+    )
+  const roundTime = (timeSec: number) => Number(timeSec.toFixed(2))
+  let candidateTimeSec = clamp(desiredTimeSec, 0, maxSearchTimeSec)
+
+  if (timeIsAvailable(candidateTimeSec)) {
+    return roundTime(candidateTimeSec)
+  }
+
+  while (candidateTimeSec + AUTO_CAMERA_KEYFRAME_STEP_SEC <= maxSearchTimeSec) {
+    candidateTimeSec += AUTO_CAMERA_KEYFRAME_STEP_SEC
+
+    if (timeIsAvailable(candidateTimeSec)) {
+      return roundTime(candidateTimeSec)
+    }
+  }
+
+  return roundTime(latestTimeSec + AUTO_CAMERA_KEYFRAME_STEP_SEC)
+}
+
+export const connectCameraKeyframes = (
+  keyframes: CameraKeyframe[],
+  durationSec: number,
+): { keyframes: CameraKeyframe[]; durationSec: number } => {
+  const retimed = retimeCameraKeyframes(keyframes, durationSec)
+
+  return {
+    durationSec: retimed.durationSec,
+    keyframes: retimed.keyframes.map((keyframe) => {
+      const connectedKeyframe = {
+        ...keyframe,
+        connectToNext: true,
+        curveToNext: 'linear' as const,
+        curveStrengthToNext: 1,
+      }
+      delete connectedKeyframe.curveControlToNext
+      delete connectedKeyframe.curveControlInToNext
+      return connectedKeyframe
+    }),
+  }
+}
+
 export const getSegmentSpeed = (keyframe: CameraKeyframe): number =>
   clamp(keyframe.speedToNext ?? 1, 0.25, 3)
 
@@ -476,16 +562,26 @@ export const getCameraSegments = (
   const camera = getActiveCamera(scene)
   const sorted = sortKeyframes(camera?.keyframes ?? [])
 
-  return sorted.slice(0, -1).map((from, index) => ({
-    from,
-    to: sorted[index + 1],
-    index,
-    speed: getSegmentSpeed(from),
-    speedCurve: getSegmentSpeedCurve(from),
-    curve: getSegmentCurve(from),
-    curveStrength: getSegmentCurveStrength(from),
-    controlPoint: getCurveControlPoint(from, sorted[index + 1]),
-  }))
+  return sorted.slice(0, -1).flatMap((from, index) => {
+    if (!isCameraSegmentConnected(from)) {
+      return []
+    }
+
+    const to = sorted[index + 1]
+
+    return [
+      {
+        from,
+        to,
+        index,
+        speed: getSegmentSpeed(from),
+        speedCurve: getSegmentSpeedCurve(from),
+        curve: getSegmentCurve(from),
+        curveStrength: getSegmentCurveStrength(from),
+        controlPoint: getCurveControlPoint(from, to),
+      },
+    ]
+  })
 }
 
 export const getActiveCamera = (scene: SceneDocument) =>
@@ -796,6 +892,15 @@ export const sampleCameraAtTime = (
   const to = sorted[nextIndex]
   const span = Math.max(0.001, to.timeSec - from.timeSec)
   const progress = clamp((timeSec - from.timeSec) / span, 0, 1)
+
+  if (!isCameraSegmentConnected(from) && progress < 0.999) {
+    return withCameraMotion(scene, timeSec, {
+      position: from.position,
+      target: resolveCameraTarget(scene, from.target, timeSec),
+      fov: from.fov,
+    })
+  }
+
   const adjustedProgress = adjustProgressBySpeed(
     progress,
     getSegmentSpeed(from),

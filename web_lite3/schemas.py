@@ -84,8 +84,9 @@ IMAGE_MODEL_SORT_ORDER = {
     "nano_banana_2": 0,
     "nano_banana_pro": 1,
     "nano_banana": 2,
-    "seedream_v5_0": 0,
-    "seedream_v4_5": 1,
+    "seedream_v5_0_pro": 0,
+    "seedream_v5_0": 1,
+    "seedream_v4_5": 2,
     "gpt_image_2": 0,
 }
 
@@ -104,8 +105,6 @@ class SettingsPayload(BaseModel):
     storage_dir: str
     volcengine_api_key: str = ""
     kling_api_key: str = ""
-    google_api_key: str = ""
-    openai_api_key: str = ""
 
     @field_validator("theme")
     @classmethod
@@ -367,6 +366,9 @@ class ImageGenerateRequest(BaseModel):
 
         if self.sequential_mode and not bool(spec.get("supports_sequential_generation")):
             raise ValueError("sequential mode is not supported for model")
+        max_count = int(spec.get("max_count") or 0)
+        if max_count and self.count > max_count:
+            raise ValueError(f"{spec.get('label', 'image model')} supports up to {max_count} images")
         if self.enable_web_search and not bool(spec.get("supports_web_search")):
             raise ValueError("web search is not supported for model")
         allowed_output_formats = {
@@ -653,6 +655,7 @@ def image_ui_schema() -> dict[str, Any]:
                 "default_moderation": spec.get("default_moderation", "auto"),
                 "supports_flexible_size": bool(spec.get("supports_flexible_size", False)),
                 "max_input_images": int(spec.get("max_input_images", 14 if spec.get("provider") == "google" else 16)),
+                "max_count": int(spec.get("max_count") or 15),
                 "pricing_hint": spec.get("pricing_hint") or {},
             }
             for variant, spec in image_model_items

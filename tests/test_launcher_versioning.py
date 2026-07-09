@@ -9,6 +9,8 @@ from web_lite3.constants import (
     APP_MACOS_APP_NAME,
     APP_MACOS_EXECUTABLE_NAME,
     APP_RELEASE_VERSION,
+    HTTP_USER_AGENT,
+    LAUNCHER_USER_AGENT,
     display_release_version,
     release_version_from_env,
 )
@@ -33,6 +35,11 @@ def test_release_version_uses_github_ref_name():
 def test_display_release_version_hides_internal_suffixes():
     assert display_release_version("v13.16-ui-check") == "v13.16"
     assert display_release_version("v13.16-blender-Dual") == "v13.16"
+
+
+def test_http_user_agents_are_ascii_header_safe():
+    for value in (HTTP_USER_AGENT, LAUNCHER_USER_AGENT):
+        assert value.encode("latin-1").decode("latin-1") == value
 
 
 def test_launcher_surfaces_callable_model_list():

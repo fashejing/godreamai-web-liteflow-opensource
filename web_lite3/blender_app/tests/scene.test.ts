@@ -1,9 +1,13 @@
 import { createServer } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { Vector3 } from 'three'
 import { app } from '../server/index'
 import {
+  connectCameraKeyframes,
+  getCameraSegments,
   getFixedShotSegments,
   getFrameCount,
+  getNextCameraKeyframeTime,
   getTimelineDuration,
   sampleCameraAtTime,
   sampleSegmentPoints,
@@ -12,7 +16,7 @@ import {
 } from '../src/scene/camera'
 import { builtInAssets } from '../src/scene/assets'
 import { cinematicMovePresets } from '../src/scene/cameraPresets'
-import { createInitialScene } from '../src/scene/factory'
+import { createInitialScene, createObjectFromAsset } from '../src/scene/factory'
 import {
   objectMotionPresets,
   reverseObjectMotion,
@@ -26,7 +30,12 @@ import {
   snapObjectPositionToPlacementGuide,
 } from '../src/scene/placement'
 import { normalizeRenderSettings, validateSceneDocument } from '../src/scene/validation'
-import type { ObjectMotion, Vec3 } from '../src/scene/types'
+import {
+  getAdaptiveMarkerScale,
+  getFrameDistanceForBounds,
+  getSceneObjectBounds,
+} from '../src/scene/viewFrame'
+import type { AssetDefinition, ObjectMotion, Vec3 } from '../src/scene/types'
 
 const subtract = (a: Vec3, b: Vec3): Vec3 => [
   a[0] - b[0],
@@ -56,6 +65,55 @@ const angleDeg = (a: Vec3, b: Vec3): number => {
   )
 
   return (Math.acos(cosine) * 180) / Math.PI
+}
+
+const makeStoredZip = (entries: Array<{ name: string; content: string | Uint8Array }>): Uint8Array => {
+  const localParts: Buffer[] = []
+  const centralParts: Buffer[] = []
+  let offset = 0
+
+  entries.forEach((entry) => {
+    const name = Buffer.from(entry.name, 'utf8')
+    const content = Buffer.isBuffer(entry.content)
+      ? entry.content
+      : Buffer.from(entry.content)
+    const localHeader = Buffer.alloc(30)
+    localHeader.writeUInt32LE(0x04034b50, 0)
+    localHeader.writeUInt16LE(20, 4)
+    localHeader.writeUInt16LE(0, 6)
+    localHeader.writeUInt16LE(0, 8)
+    localHeader.writeUInt32LE(0, 14)
+    localHeader.writeUInt32LE(content.length, 18)
+    localHeader.writeUInt32LE(content.length, 22)
+    localHeader.writeUInt16LE(name.length, 26)
+    localParts.push(localHeader, name, content)
+
+    const centralHeader = Buffer.alloc(46)
+    centralHeader.writeUInt32LE(0x02014b50, 0)
+    centralHeader.writeUInt16LE(20, 4)
+    centralHeader.writeUInt16LE(20, 6)
+    centralHeader.writeUInt16LE(0, 8)
+    centralHeader.writeUInt16LE(0, 10)
+    centralHeader.writeUInt32LE(0, 16)
+    centralHeader.writeUInt32LE(content.length, 20)
+    centralHeader.writeUInt32LE(content.length, 24)
+    centralHeader.writeUInt16LE(name.length, 28)
+    centralHeader.writeUInt32LE(offset, 42)
+    centralParts.push(centralHeader, name)
+
+    offset += localHeader.length + name.length + content.length
+  })
+
+  const centralDirectoryOffset = offset
+  const centralDirectory = Buffer.concat(centralParts)
+  const endOfCentralDirectory = Buffer.alloc(22)
+  endOfCentralDirectory.writeUInt32LE(0x06054b50, 0)
+  endOfCentralDirectory.writeUInt16LE(entries.length, 8)
+  endOfCentralDirectory.writeUInt16LE(entries.length, 10)
+  endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12)
+  endOfCentralDirectory.writeUInt32LE(centralDirectoryOffset, 16)
+
+  return Buffer.concat([...localParts, centralDirectory, endOfCentralDirectory])
 }
 
 let baseUrl = ''
@@ -95,6 +153,7 @@ describe('scene document schema', () => {
       format: 'mp4',
       fillWhiteGround: true,
       hideGrid: true,
+      floorMaterial: 'checker',
     })
 
     expect(settings).toEqual({
@@ -105,6 +164,7 @@ describe('scene document schema', () => {
       format: 'mp4',
       fillWhiteGround: true,
       hideGrid: true,
+      floorMaterial: 'checker',
     })
   })
 
@@ -113,6 +173,7 @@ describe('scene document schema', () => {
     const legacyRenderSettings = { ...scene.renderSettings }
     delete (legacyRenderSettings as Partial<typeof scene.renderSettings>).fillWhiteGround
     delete (legacyRenderSettings as Partial<typeof scene.renderSettings>).hideGrid
+    delete (legacyRenderSettings as Partial<typeof scene.renderSettings>).floorMaterial
 
     const parsed = validateSceneDocument({
       ...scene,
@@ -121,6 +182,7 @@ describe('scene document schema', () => {
 
     expect(parsed.renderSettings.fillWhiteGround).toBe(false)
     expect(parsed.renderSettings.hideGrid).toBe(false)
+    expect(parsed.renderSettings.floorMaterial).toBe('studio')
   })
 
   it('normalizes oversized light distances instead of rejecting render payloads', () => {
@@ -191,7 +253,129 @@ describe('scene undo history', () => {
   })
 })
 
+describe('viewport framing', () => {
+  it('keeps viewport helper markers compact near the camera', () => {
+    expect(getAdaptiveMarkerScale(0.4)).toBe(0.22)
+    expect(getAdaptiveMarkerScale(3)).toBeCloseTo(0.54)
+    expect(getAdaptiveMarkerScale(12)).toBe(1)
+  })
+
+  it('frames scaled imported models from asset dimensions', () => {
+    const importedAsset: AssetDefinition = {
+      id: 'asset-plastic-crate',
+      label: 'Plastic crate',
+      category: 'prop',
+      kind: 'imported',
+      url: '/assets/plastic_crate_03_1k.gltf',
+      format: 'gltf',
+      dimensions: [2, 1, 3],
+    }
+    const scene = createInitialScene()
+    scene.objects = [
+      createObjectFromAsset(importedAsset, {
+        id: 'object-plastic-crate',
+        transform: {
+          position: [3, 0, -2],
+          rotation: [0, 0, 0],
+          scale: [2, 1.5, 0.5],
+        },
+      }),
+    ]
+
+    const bounds = getSceneObjectBounds(scene.objects, [...builtInAssets, importedAsset])
+
+    expect(bounds).not.toBeNull()
+    expect(bounds!.getCenter(new Vector3()).toArray()).toEqual([3, 0.75, -2])
+    expect(bounds!.getSize(new Vector3()).toArray()).toEqual([4, 1.5, 1.5])
+    expect(getFrameDistanceForBounds(bounds!, 48, 16 / 9)).toBeGreaterThan(2)
+  })
+})
+
 describe('camera timeline sampling', () => {
+  it('places repeated camera keyframe additions into the next open time slot', () => {
+    const scene = createInitialScene()
+    scene.cameras[0].keyframes = [
+      {
+        ...scene.cameras[0].keyframes[0],
+        timeSec: 0,
+      },
+    ]
+
+    const firstAddedTime = getNextCameraKeyframeTime(
+      scene.cameras[0].keyframes,
+      0,
+      scene.renderSettings.durationSec,
+    )
+    scene.cameras[0].keyframes.push({
+      ...scene.cameras[0].keyframes[0],
+      id: 'kf-added-1',
+      timeSec: firstAddedTime,
+    })
+    const secondAddedTime = getNextCameraKeyframeTime(
+      scene.cameras[0].keyframes,
+      0,
+      scene.renderSettings.durationSec,
+    )
+
+    expect(firstAddedTime).toBe(2)
+    expect(secondAddedTime).toBe(4)
+  })
+
+  it('connects camera keyframes into one continuous trajectory', () => {
+    const scene = createInitialScene()
+    scene.renderSettings.durationSec = 12
+    const [first, second, third] = scene.cameras[0].keyframes
+    const connected = connectCameraKeyframes(
+      [
+        {
+          ...first,
+          timeSec: 0,
+          curveToNext: 'custom',
+          curveControlToNext: [1, 2, 3],
+          curveControlInToNext: [3, 2, 1],
+        },
+        {
+          ...second,
+          timeSec: 0,
+        },
+        {
+          ...third,
+          timeSec: 0,
+        },
+      ],
+      scene.renderSettings.durationSec,
+    )
+
+    expect(connected.durationSec).toBe(12)
+    expect(connected.keyframes.map((keyframe) => keyframe.timeSec)).toEqual([
+      0, 6, 12,
+    ])
+    expect(connected.keyframes.every((keyframe) => keyframe.curveToNext === 'linear')).toBe(
+      true,
+    )
+    expect(connected.keyframes.every((keyframe) => keyframe.connectToNext)).toBe(
+      true,
+    )
+    expect(connected.keyframes[0].curveControlToNext).toBeUndefined()
+    expect(connected.keyframes[0].curveControlInToNext).toBeUndefined()
+  })
+
+  it('lets camera trajectory segments be disconnected independently', () => {
+    const scene = createInitialScene()
+    scene.cameras[0].keyframes[0] = {
+      ...scene.cameras[0].keyframes[0],
+      curveToNext: 'linear',
+      connectToNext: false,
+    }
+
+    const segments = getCameraSegments(scene)
+    const sample = sampleCameraAtTime(scene, 2.5)
+
+    expect(segments.map((segment) => segment.index)).toEqual([1])
+    expect(sample.position).toEqual(scene.cameras[0].keyframes[0].position)
+    expect(sample.fov).toBe(scene.cameras[0].keyframes[0].fov)
+  })
+
   it('samples midway between two keyframes', () => {
     const scene = createInitialScene()
     scene.cameras[0].keyframes[0].curveToNext = 'linear'
@@ -764,6 +948,7 @@ describe('asset import API', () => {
       body,
     })
     const payload = await response.json() as {
+      id: string
       kind: string
       format: string
       url: string
@@ -773,6 +958,72 @@ describe('asset import API', () => {
     expect(payload.kind).toBe('imported')
     expect(payload.format).toBe('obj')
     expect(payload.url).toMatch(/\.obj$/)
+  })
+
+  it('accepts ZIP model packages and serves nested glTF dependencies', async () => {
+    const packageName = `delete-package-${Date.now()}`
+    const packageBytes = makeStoredZip([
+      {
+        name: `${packageName}/${packageName}.gltf`,
+        content: JSON.stringify({
+          asset: { version: '2.0' },
+          buffers: [{ uri: `${packageName}.bin`, byteLength: 4 }],
+          images: [{ uri: `textures/${packageName}.jpg` }],
+        }),
+      },
+      {
+        name: `${packageName}/${packageName}.bin`,
+        content: new Uint8Array([0, 1, 2, 3]),
+      },
+      {
+        name: `${packageName}/textures/${packageName}.jpg`,
+        content: new Uint8Array([255, 216, 255, 217]),
+      },
+    ])
+    const body = new FormData()
+    body.append('asset', new Blob([packageBytes]), `${packageName}.zip`)
+
+    const response = await fetch(`${baseUrl}/api/assets/import`, {
+      method: 'POST',
+      body,
+    })
+    const payload = await response.json() as {
+      id: string
+      kind: string
+      format: string
+      url: string
+    }
+
+    expect(response.status).toBe(201)
+    expect(payload.kind).toBe('imported')
+    expect(payload.format).toBe('gltf')
+    expect(payload.url).toContain(`${packageName}.gltf`)
+
+    const packageBaseUrl = payload.url.split('/').slice(0, -1).join('/')
+    const binResponse = await fetch(`${baseUrl}${packageBaseUrl}/${packageName}.bin`)
+    const textureResponse = await fetch(
+      `${baseUrl}${packageBaseUrl}/textures/${packageName}.jpg`,
+    )
+
+    expect(binResponse.status).toBe(200)
+    expect(textureResponse.status).toBe(200)
+
+    const assetsBeforeDelete = await fetch(`${baseUrl}/api/assets`)
+    const assetListBeforeDelete = await assetsBeforeDelete.json() as Array<{ id: string }>
+    expect(assetListBeforeDelete.some((asset) => asset.id === payload.id)).toBe(true)
+
+    const deleteResponse = await fetch(
+      `${baseUrl}/api/assets/${encodeURIComponent(payload.id)}`,
+      { method: 'DELETE' },
+    )
+    const assetListAfterDelete = await (await fetch(`${baseUrl}/api/assets`)).json() as Array<{ id: string }>
+    const deletedTextureResponse = await fetch(
+      `${baseUrl}${packageBaseUrl}/textures/${packageName}.jpg`,
+    )
+
+    expect(deleteResponse.status).toBe(204)
+    expect(assetListAfterDelete.some((asset) => asset.id === payload.id)).toBe(false)
+    expect(deletedTextureResponse.status).toBe(404)
   })
 
   it('imports green screen texture images', async () => {

@@ -20,10 +20,12 @@ export const loadableImportExtensions = importedModelFormats.flatMap(
 )
 
 export const blendImportExtension = 'blend'
+export const zipImportExtension = 'zip'
 
 export const supportedImportExtensions = [
   ...loadableImportExtensions,
   blendImportExtension,
+  zipImportExtension,
 ]
 
 export const supportedImportAccept = supportedImportExtensions
@@ -32,11 +34,14 @@ export const supportedImportAccept = supportedImportExtensions
 
 export const supportedImportLabel = importedModelFormats
   .map((item) => item.label)
-  .concat('BLEND')
+  .concat('BLEND', 'ZIP')
   .join(' / ')
 
 export const isBlendImportFilename = (filename: string): boolean =>
   filename.split('.').pop()?.toLowerCase() === blendImportExtension
+
+export const isZipImportFilename = (filename: string): boolean =>
+  filename.split('.').pop()?.toLowerCase() === zipImportExtension
 
 export const getImportedModelFormat = (
   filename: string,

@@ -127,13 +127,13 @@ godreamai-web-lite3/
 应用 home 目录默认是：
 
 ```text
-~/.godreamai-plus
+~/.godreamai-opensource
 ```
 
 可通过环境变量覆盖：
 
 ```text
-GODREAMAI_PLUS_HOME
+GODREAMAI_OPENSOURCE_HOME
 ```
 
 `代码确认`：见 `web_lite3/data_paths.py`

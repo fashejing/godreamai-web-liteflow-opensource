@@ -3,11 +3,12 @@ import express from 'express'
 import { execFile as execFileCallback } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
-import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { inflateRawSync } from 'node:zlib'
 import multer from 'multer'
 import { bundle } from '@remotion/bundler'
 import { renderMedia, selectComposition } from '@remotion/renderer'
@@ -15,6 +16,7 @@ import { builtInAssets } from '../src/scene/assets'
 import {
   getImportedModelFormat,
   isBlendImportFilename,
+  isZipImportFilename,
   loadableImportExtensions,
   supportedImportExtensions,
   supportedImportLabel,
@@ -61,29 +63,83 @@ const isLoadableModelFile = (filename: string): boolean =>
   loadableImportExtensions.includes(path.extname(filename).slice(1).toLowerCase())
 
 const supportedTextureExtensions = ['.png', '.jpg', '.jpeg', '.webp']
+const packageModelPriority = [
+  '.glb',
+  '.gltf',
+  '.obj',
+  '.fbx',
+  '.dae',
+  '.stl',
+  '.ply',
+  '.3mf',
+  '.3ds',
+  '.blend',
+]
 
 const isSupportedTextureFile = (filename: string): boolean =>
   supportedTextureExtensions.includes(path.extname(filename).toLowerCase())
 
+const toUploadUrl = (relativePath: string): string =>
+  `/uploads/${relativePath
+    .split(path.sep)
+    .map((part) => encodeURIComponent(part))
+    .join('/')}`
+
+const listFilesRecursive = async (directory: string): Promise<string[]> => {
+  const entries = await readdir(directory, { withFileTypes: true })
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        return listFilesRecursive(entryPath)
+      }
+      return [entryPath]
+    }),
+  )
+
+  return files.flat()
+}
+
 const getImportedAssets = async (): Promise<AssetDefinition[]> => {
   await ensureDirs()
-  const files = await readdir(importDir)
+  const files = await listFilesRecursive(importDir)
 
   return files
     .filter(isLoadableModelFile)
     .sort((a, b) => a.localeCompare(b))
-    .map((filename) => {
-      const baseName = safeBaseName(filename)
+    .map((filePath) => {
+      const relativePath = path.relative(importDir, filePath)
+      const baseName = safeBaseName(path.basename(filePath))
       return {
         id: `import-${baseName}`,
         label: baseName,
         category: 'prop',
         kind: 'imported',
-        url: `/uploads/${filename}`,
-        format: getImportedModelFormat(filename),
+        url: toUploadUrl(relativePath),
+        format: getImportedModelFormat(filePath),
         dimensions: [1, 1, 1],
       }
     })
+}
+
+const getImportedAssetDeleteTarget = (asset: AssetDefinition): string | null => {
+  if (!asset.url?.startsWith('/uploads/')) {
+    return null
+  }
+
+  const relativePath = decodeURIComponent(asset.url.slice('/uploads/'.length))
+  const parts = relativePath.split('/').filter((part) => part && part !== '.')
+  if (parts.length === 0 || parts.some((part) => part === '..')) {
+    return null
+  }
+
+  const target = path.resolve(importDir, parts.length > 1 ? parts[0] : parts[0])
+  const importRoot = path.resolve(importDir)
+  if (target !== importRoot && target.startsWith(`${importRoot}${path.sep}`)) {
+    return target
+  }
+
+  return null
 }
 
 const publicJob = (job: InternalRenderJob): RenderJob => ({
@@ -151,6 +207,175 @@ const convertBlendToGlb = async (sourcePath: string, targetPath: string) => {
   } finally {
     await unlink(scriptPath).catch(() => undefined)
   }
+}
+
+type ZipEntry = {
+  name: string
+  compressionMethod: number
+  compressedSize: number
+  uncompressedSize: number
+  localHeaderOffset: number
+}
+
+const findEndOfCentralDirectory = (buffer: Buffer): number => {
+  for (let index = buffer.length - 22; index >= 0; index -= 1) {
+    if (buffer.readUInt32LE(index) === 0x06054b50) {
+      return index
+    }
+  }
+
+  throw new Error('ZIP 资产包无法读取，请确认文件未损坏。')
+}
+
+const parseZipEntries = (buffer: Buffer): ZipEntry[] => {
+  const eocdOffset = findEndOfCentralDirectory(buffer)
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10)
+  let offset = buffer.readUInt32LE(eocdOffset + 16)
+  const entries: ZipEntry[] = []
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error('ZIP 资产包目录结构异常。')
+    }
+
+    const compressionMethod = buffer.readUInt16LE(offset + 10)
+    const compressedSize = buffer.readUInt32LE(offset + 20)
+    const uncompressedSize = buffer.readUInt32LE(offset + 24)
+    const filenameLength = buffer.readUInt16LE(offset + 28)
+    const extraLength = buffer.readUInt16LE(offset + 30)
+    const commentLength = buffer.readUInt16LE(offset + 32)
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42)
+    const name = buffer.toString('utf8', offset + 46, offset + 46 + filenameLength)
+
+    entries.push({
+      name,
+      compressionMethod,
+      compressedSize,
+      uncompressedSize,
+      localHeaderOffset,
+    })
+    offset += 46 + filenameLength + extraLength + commentLength
+  }
+
+  return entries
+}
+
+const zipEntryRelativePath = (name: string): string | null => {
+  const normalized = name.replaceAll('\\', '/')
+  if (!normalized || normalized.startsWith('/') || normalized.includes('\0')) {
+    return null
+  }
+
+  const parts = normalized.split('/').filter((part) => part && part !== '.')
+  if (parts.length === 0 || parts.some((part) => part === '..')) {
+    return null
+  }
+
+  if (parts[0] === '__MACOSX' || path.posix.basename(parts[parts.length - 1]).startsWith('.')) {
+    return null
+  }
+
+  return parts.join('/')
+}
+
+const unzipEntryData = (buffer: Buffer, entry: ZipEntry): Buffer => {
+  const offset = entry.localHeaderOffset
+  if (buffer.readUInt32LE(offset) !== 0x04034b50) {
+    throw new Error('ZIP 资产包文件头异常。')
+  }
+
+  const filenameLength = buffer.readUInt16LE(offset + 26)
+  const extraLength = buffer.readUInt16LE(offset + 28)
+  const dataStart = offset + 30 + filenameLength + extraLength
+  const compressed = buffer.subarray(dataStart, dataStart + entry.compressedSize)
+
+  if (entry.compressionMethod === 0) {
+    return compressed
+  }
+
+  if (entry.compressionMethod === 8) {
+    return inflateRawSync(compressed)
+  }
+
+  throw new Error('ZIP 资产包包含不支持的压缩方式。请重新压缩为标准 zip。')
+}
+
+const findPackageModel = async (packageDir: string): Promise<string | null> => {
+  const files = await listFilesRecursive(packageDir)
+  const candidates = files.filter((filePath) =>
+    [...loadableImportExtensions, 'blend'].includes(
+      path.extname(filePath).slice(1).toLowerCase(),
+    ),
+  )
+
+  if (candidates.length === 0) {
+    return null
+  }
+
+  return candidates.sort((a, b) => {
+    const rankA = packageModelPriority.indexOf(path.extname(a).toLowerCase())
+    const rankB = packageModelPriority.indexOf(path.extname(b).toLowerCase())
+    const safeRankA = rankA === -1 ? packageModelPriority.length : rankA
+    const safeRankB = rankB === -1 ? packageModelPriority.length : rankB
+
+    if (safeRankA !== safeRankB) {
+      return safeRankA - safeRankB
+    }
+
+    const depthA = path.relative(packageDir, a).split(path.sep).length
+    const depthB = path.relative(packageDir, b).split(path.sep).length
+    return depthA === depthB ? a.localeCompare(b) : depthA - depthB
+  })[0]
+}
+
+const extractModelPackage = async (
+  zipPath: string,
+  packageDir: string,
+): Promise<string> => {
+  await rm(packageDir, { recursive: true, force: true })
+  await mkdir(packageDir, { recursive: true })
+  const zipBuffer = await readFile(zipPath)
+  const entries = parseZipEntries(zipBuffer)
+  let totalUncompressed = 0
+
+  for (const entry of entries) {
+    if (entry.name.endsWith('/')) {
+      continue
+    }
+
+    const relativePath = zipEntryRelativePath(entry.name)
+    if (!relativePath) {
+      continue
+    }
+
+    totalUncompressed += entry.uncompressedSize
+    if (totalUncompressed > 300 * 1024 * 1024) {
+      throw new Error('ZIP 资产包解压后超过 300MB，请改用低分辨率或单个 GLB/GLTF 文件。')
+    }
+
+    const targetPath = path.resolve(packageDir, relativePath)
+    const packageRoot = path.resolve(packageDir)
+    if (targetPath !== packageRoot && !targetPath.startsWith(`${packageRoot}${path.sep}`)) {
+      continue
+    }
+
+    await mkdir(path.dirname(targetPath), { recursive: true })
+    await writeFile(targetPath, unzipEntryData(zipBuffer, entry))
+  }
+
+  const mainModel = await findPackageModel(packageDir)
+  if (!mainModel) {
+    throw new Error('ZIP 资产包中未找到可导入模型文件。请包含 GLB/GLTF/OBJ/FBX/DAE/STL/PLY/3MF/3DS 或 BLEND。')
+  }
+
+  if (isBlendImportFilename(mainModel)) {
+    const glbPath = `${mainModel.slice(0, -path.extname(mainModel).length)}.glb`
+    await convertBlendToGlb(mainModel, glbPath)
+    await unlink(mainModel).catch(() => undefined)
+    return glbPath
+  }
+
+  return mainModel
 }
 
 const updateJob = (id: string, patch: Partial<InternalRenderJob>) => {
@@ -346,26 +571,63 @@ app.post('/api/assets/import', upload.single('asset'), async (request, response)
     return
   }
 
-  let filename = request.file.filename
-  if (isBlendImportFilename(filename)) {
-    const glbFilename = `${path.basename(filename, path.extname(filename))}.glb`
+  let filePath = request.file.path
+  if (isZipImportFilename(request.file.filename)) {
+    const packageDir = path.join(
+      importDir,
+      path.basename(request.file.filename, path.extname(request.file.filename)),
+    )
+    try {
+      filePath = await extractModelPackage(request.file.path, packageDir)
+    } finally {
+      await unlink(request.file.path).catch(() => undefined)
+    }
+  } else if (isBlendImportFilename(request.file.filename)) {
+    const glbFilename = `${path.basename(
+      request.file.filename,
+      path.extname(request.file.filename),
+    )}.glb`
     const glbPath = path.join(importDir, glbFilename)
     await convertBlendToGlb(request.file.path, glbPath)
     await unlink(request.file.path).catch(() => undefined)
-    filename = glbFilename
+    filePath = glbPath
   }
-  const baseName = safeBaseName(filename)
+  const relativePath = path.relative(importDir, filePath)
+  const baseName = safeBaseName(path.basename(filePath))
   const asset: AssetDefinition = {
     id: `import-${baseName}`,
     label: safeBaseName(request.file.originalname),
     category: 'prop',
     kind: 'imported',
-    url: `/uploads/${filename}`,
-    format: getImportedModelFormat(filename),
+    url: toUploadUrl(relativePath),
+    format: getImportedModelFormat(filePath),
     dimensions: [1, 1, 1],
   }
 
   response.status(201).json(asset)
+})
+
+app.delete('/api/assets/:assetId', async (request, response, next) => {
+  try {
+    const importedAssets = await getImportedAssets()
+    const asset = importedAssets.find((candidate) => candidate.id === request.params.assetId)
+
+    if (!asset) {
+      response.status(404).send('Imported asset not found.')
+      return
+    }
+
+    const target = getImportedAssetDeleteTarget(asset)
+    if (!target) {
+      response.status(404).send('Imported asset not found.')
+      return
+    }
+
+    await rm(target, { recursive: true, force: true })
+    response.sendStatus(204)
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.post('/api/textures/import', textureUpload.single('texture'), async (request, response) => {

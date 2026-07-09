@@ -33,6 +33,8 @@ from web_lite3.network import (
 DEFAULT_PROMPT_FONT_SIZE = 16
 MIN_PROMPT_FONT_SIZE = 14
 MAX_PROMPT_FONT_SIZE = 28
+SUPPORTED_API_KEY_PROVIDERS = ("volcengine", "kling")
+LEGACY_API_KEY_PROVIDERS = ("google", "openai")
 
 
 def _deep_merge(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
@@ -59,13 +61,7 @@ class AppSettings:
     kling_network_mode: str = NETWORK_MODE_DIRECT
     storage_dir: str = ""
     volcengine_api_key: str = ""
-    volcengine_api_key_history: list[str] | None = None
     kling_api_key: str = ""
-    kling_api_key_history: list[str] | None = None
-    google_api_key: str = ""
-    google_api_key_history: list[str] | None = None
-    openai_api_key: str = ""
-    openai_api_key_history: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -81,13 +77,7 @@ class AppSettings:
             "kling_network_mode": self.kling_network_mode,
             "storage_dir": self.storage_dir,
             "volcengine_api_key": self.volcengine_api_key,
-            "volcengine_api_key_history": list(self.volcengine_api_key_history or []),
             "kling_api_key": self.kling_api_key,
-            "kling_api_key_history": list(self.kling_api_key_history or []),
-            "google_api_key": self.google_api_key,
-            "google_api_key_history": list(self.google_api_key_history or []),
-            "openai_api_key": self.openai_api_key,
-            "openai_api_key_history": list(self.openai_api_key_history or []),
         }
 
 
@@ -153,10 +143,6 @@ class SettingsStore:
             google_network_mode=NETWORK_MODE_PROXY,
             volcengine_network_mode=NETWORK_MODE_DIRECT,
             kling_network_mode=NETWORK_MODE_DIRECT,
-            volcengine_api_key_history=[],
-            kling_api_key_history=[],
-            google_api_key_history=[],
-            openai_api_key_history=[],
         )
 
     @staticmethod
@@ -169,19 +155,6 @@ class SettingsStore:
         if not raw_value:
             return ""
         return str(Path(raw_value).expanduser().resolve())
-
-    @staticmethod
-    def _normalize_api_key_history(value: Any) -> list[str]:
-        items = value if isinstance(value, list) else []
-        history: list[str] = []
-        seen: set[str] = set()
-        for item in items:
-            normalized = str(item or "").strip()
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            history.append(normalized)
-        return history[:10]
 
     def _stat_mtime_ns(self) -> int | None:
         try:
@@ -205,16 +178,22 @@ class SettingsStore:
             kling_network_mode=self._normalize_provider_network_mode("kling", merged.get("kling_network_mode")),
             storage_dir=str(merged.get("storage_dir") or self.paths.storage_dir),
             volcengine_api_key=str(merged.get("volcengine_api_key") or ""),
-            volcengine_api_key_history=self._normalize_api_key_history(merged.get("volcengine_api_key_history")),
             kling_api_key=str(merged.get("kling_api_key") or ""),
-            kling_api_key_history=self._normalize_api_key_history(merged.get("kling_api_key_history")),
-            google_api_key=str(merged.get("google_api_key") or ""),
-            google_api_key_history=self._normalize_api_key_history(merged.get("google_api_key_history")),
-            openai_api_key=str(merged.get("openai_api_key") or ""),
-            openai_api_key_history=self._normalize_api_key_history(merged.get("openai_api_key_history")),
         )
 
+    @staticmethod
+    def _sanitize_api_key_fields(merged: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(merged)
+        for provider in SUPPORTED_API_KEY_PROVIDERS:
+            sanitized[f"{provider}_api_key"] = str(sanitized.get(f"{provider}_api_key") or "").strip()
+            sanitized.pop(f"{provider}_api_key_history", None)
+        for provider in LEGACY_API_KEY_PROVIDERS:
+            sanitized.pop(f"{provider}_api_key", None)
+            sanitized.pop(f"{provider}_api_key_history", None)
+        return sanitized
+
     def _write_settings(self, merged: dict[str, Any]) -> AppSettings:
+        merged = self._sanitize_api_key_fields(merged)
         self.paths.settings_file.write_text(
             json.dumps(merged, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -232,7 +211,11 @@ class SettingsStore:
         if current_mtime_ns is None:
             return self._write_settings(self.default_settings().to_dict())
         raw = json.loads(self.paths.settings_file.read_text(encoding="utf-8") or "{}")
-        settings = self._build_settings(raw if isinstance(raw, dict) else {})
+        raw_payload = raw if isinstance(raw, dict) else {}
+        sanitized_payload = self._sanitize_api_key_fields(raw_payload)
+        if sanitized_payload != raw_payload:
+            return self._write_settings(sanitized_payload)
+        settings = self._build_settings(sanitized_payload)
         ensure_storage_paths(settings.storage_dir)
         self._cache = settings
         self._cache_mtime_ns = current_mtime_ns
@@ -258,11 +241,6 @@ class SettingsStore:
             merged["kling_network_mode"] = self._normalize_provider_network_mode("kling", merged.get("kling_network_mode"))
             merged["storage_dir"] = self._normalize_path(merged.get("storage_dir") or self.paths.storage_dir)
             merged.pop("material_storage_dir", None)
-            for provider in ("volcengine", "kling", "google", "openai"):
-                active_key = str(merged.get(f"{provider}_api_key") or "").strip()
-                history = self._normalize_api_key_history(merged.get(f"{provider}_api_key_history"))
-                if active_key:
-                    history = [active_key, *[item for item in history if item != active_key]]
-                merged[f"{provider}_api_key_history"] = history[:10]
+            merged = self._sanitize_api_key_fields(merged)
             ensure_storage_paths(merged["storage_dir"])
             return self._write_settings(merged)

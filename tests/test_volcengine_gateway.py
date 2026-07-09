@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 import requests
 
+from web_lite3.constants import HTTP_USER_AGENT
+from web_lite3.schemas import ImageGenerateRequest, VideoGenerateRequest
 from web_lite3.volcengine import (
     IMAGE_REQUEST_CONNECTION_ERROR_MESSAGE,
     IMAGE_REQUEST_MAX_ATTEMPTS,
@@ -15,6 +17,8 @@ from web_lite3.volcengine import (
     VolcengineGatewayError,
     VolcengineImageGateway,
     VolcengineVideoGateway,
+    build_image_payload,
+    build_video_payload,
 )
 
 
@@ -43,6 +47,91 @@ class DummyStreamResponse(DummyResponse):
     def iter_lines(self, decode_unicode=True):
         for line in self._lines:
             yield line
+
+
+def test_seedream_v5_pro_payload_uses_pro_model_and_supported_fields_only():
+    request = ImageGenerateRequest(
+        model_variant="seedream_v5_0_pro",
+        prompt="product render",
+        aspect_ratio="1:1",
+        size="1K",
+        count=1,
+        sequential_mode=False,
+        output_format="png",
+        enable_web_search=False,
+        reference_asset_ids=["ref-1"],
+    )
+
+    payload = build_image_payload(
+        request,
+        input_image=None,
+        reference_images=["data:image/png;base64,abc"],
+    )
+
+    assert payload["model"] == "doubao-seedream-5-0-pro-260628"
+    assert payload["size"] == "1k"
+    assert payload["image"] == "data:image/png;base64,abc"
+    assert payload["output_format"] == "png"
+    assert "sequential_image_generation" not in payload
+    assert "tools" not in payload
+
+
+def test_seedream_v5_pro_rejects_unsupported_generation_options():
+    with pytest.raises(ValueError, match="supports up to 1 images"):
+        ImageGenerateRequest(
+            model_variant="seedream_v5_0_pro",
+            prompt="product render",
+            aspect_ratio="1:1",
+            size="1K",
+            count=2,
+            sequential_mode=False,
+            output_format="jpeg",
+            enable_web_search=False,
+            reference_asset_ids=[],
+        )
+    with pytest.raises(ValueError, match="web search is not supported"):
+        ImageGenerateRequest(
+            model_variant="seedream_v5_0_pro",
+            prompt="product render",
+            aspect_ratio="1:1",
+            size="1K",
+            count=1,
+            sequential_mode=False,
+            output_format="jpeg",
+            enable_web_search=True,
+            reference_asset_ids=[],
+        )
+
+
+def test_seedance_2_0_mini_payload_uses_latest_mini_model():
+    request = VideoGenerateRequest(
+        model_variant="seedance_2_0_mini",
+        prompt="dynamic product video",
+        scene_type="text_only",
+        resolution_grade="480p",
+        ratio="adaptive",
+        duration=6,
+        generate_audio=True,
+        enable_web_search=True,
+    )
+
+    payload = build_video_payload(request)
+
+    assert payload["model"] == "doubao-seedance-2-0-mini-260615"
+    assert payload["resolution"] == "480p"
+    assert payload["generate_audio"] is True
+    assert payload["tools"] == [{"type": "web_search"}]
+
+
+def test_volcengine_user_agents_are_http_header_safe():
+    gateways = [
+        VolcengineImageGateway("ark-key"),
+        VolcengineVideoGateway("ark-key"),
+    ]
+    for gateway in gateways:
+        user_agent = gateway._headers()["User-Agent"]
+        assert user_agent == HTTP_USER_AGENT
+        assert user_agent.encode("latin-1").decode("latin-1") == user_agent
 
 
 def test_image_gateway_uses_direct_session_without_env_proxy():

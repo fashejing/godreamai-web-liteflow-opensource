@@ -4912,6 +4912,67 @@ body[data-theme="retro_starship"] .canvas-card.is-note {
   border-color: #9f1d2f;
 }
 
+.blender-import-panel {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: var(--border-width) solid color-mix(in srgb, var(--sidebar-ink) 18%, transparent);
+  border-radius: 16px;
+  background: var(--sidebar-control-surface);
+  color: var(--sidebar-ink);
+}
+
+.blender-import-title {
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+.blender-import-copy,
+.blender-format-note,
+.blender-import-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--sidebar-ink-muted);
+}
+
+.blender-upload-input {
+  display: none;
+}
+
+.blender-upload-button {
+  width: 100%;
+  min-height: 38px;
+  justify-content: center;
+}
+
+.blender-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.blender-source-list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: var(--border-width) solid color-mix(in srgb, var(--sidebar-ink) 22%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar-glass-strong) 62%, transparent);
+  color: var(--sidebar-ink);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.blender-source-list a:hover,
+.blender-source-list a:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--sidebar-ink) 20%);
+  color: var(--accent);
+}
+
 .blender-host-page {
   width: 100%;
   height: calc(100vh - 32px);

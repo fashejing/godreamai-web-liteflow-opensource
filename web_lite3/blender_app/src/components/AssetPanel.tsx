@@ -1,4 +1,4 @@
-import { Box, Plus, Search, Upload } from 'lucide-react'
+import { Box, Plus, Search, Trash2, Upload } from 'lucide-react'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { assetCategoryLabels } from '../scene/assets'
 import { supportedImportAccept, supportedImportLabel } from '../scene/importedFormats'
@@ -12,6 +12,7 @@ type AssetPanelProps = {
   tools?: ReactNode
   onSelectAsset: (assetId: string) => void
   onAddAsset: (assetId: string) => void
+  onDeleteImportedAsset: (assetId: string) => void
   onAddSceneMotionPreset: (presetId: string) => void
   onImportAsset: (file: File) => void
 }
@@ -42,6 +43,7 @@ export const AssetPanel = ({
   tools,
   onSelectAsset,
   onAddAsset,
+  onDeleteImportedAsset,
   onAddSceneMotionPreset,
   onImportAsset,
 }: AssetPanelProps) => {
@@ -176,6 +178,20 @@ export const AssetPanel = ({
                       <span className="asset-kind">
                         {asset.kind === 'imported' ? '导入' : '内置'}
                       </span>
+                      {asset.kind === 'imported' ? (
+                        <button
+                          type="button"
+                          className="asset-delete"
+                          title={`删除导入模型 ${asset.label}`}
+                          aria-label={`删除导入模型 ${asset.label}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onDeleteImportedAsset(asset.id)
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="asset-add"

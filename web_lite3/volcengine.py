@@ -8,12 +8,14 @@ from typing import Any, Callable
 import requests
 
 from web_lite3.constants import (
-    APP_DISPLAY_NAME,
+    HTTP_USER_AGENT,
     IMAGE_MODELS,
     SEEDREAM_MAX_ASPECT_RATIO,
     SEEDREAM_MAX_TOTAL_PIXELS,
     SEEDREAM_MIN_EDGE,
     SEEDREAM_MIN_TOTAL_PIXELS,
+    SEEDREAM_PRO_MAX_TOTAL_PIXELS,
+    SEEDREAM_PRO_MIN_TOTAL_PIXELS,
     VIDEO_MODELS,
 )
 from web_lite3.network import ProviderNetworkManager
@@ -56,7 +58,14 @@ class VolcengineGatewayError(RuntimeError):
         self.detail = detail
 
 
-def _normalize_seedream_size(size: str, allowed_resolutions: set[str], error_message: str) -> str:
+def _normalize_seedream_size(
+    size: str,
+    allowed_resolutions: set[str],
+    error_message: str,
+    *,
+    min_total_pixels: int = SEEDREAM_MIN_TOTAL_PIXELS,
+    max_total_pixels: int = SEEDREAM_MAX_TOTAL_PIXELS,
+) -> str:
     normalized = str(size or "").strip().lower()
     if normalized in allowed_resolutions:
         return normalized
@@ -74,7 +83,7 @@ def _normalize_seedream_size(size: str, allowed_resolutions: set[str], error_mes
         raise ValueError(error_message)
     if not (1 / SEEDREAM_MAX_ASPECT_RATIO <= ratio <= SEEDREAM_MAX_ASPECT_RATIO):
         raise ValueError(error_message)
-    if not (SEEDREAM_MIN_TOTAL_PIXELS <= total_pixels <= SEEDREAM_MAX_TOTAL_PIXELS):
+    if not (min_total_pixels <= total_pixels <= max_total_pixels):
         raise ValueError(error_message)
     return f"{width}x{height}"
 
@@ -85,6 +94,16 @@ def normalize_seedream_4_5_size(size: str) -> str:
 
 def normalize_seedream_5_size(size: str) -> str:
     return _normalize_seedream_size(size, {"2k", "3k", "4k"}, "Seedream 5.0 尺寸不受支持")
+
+
+def normalize_seedream_5_pro_size(size: str) -> str:
+    return _normalize_seedream_size(
+        size,
+        {"1k", "2k"},
+        "Seedream 5.0 Pro 尺寸不受支持",
+        min_total_pixels=SEEDREAM_PRO_MIN_TOTAL_PIXELS,
+        max_total_pixels=SEEDREAM_PRO_MAX_TOTAL_PIXELS,
+    )
 
 
 def build_image_payload(
@@ -113,8 +132,24 @@ def build_image_payload(
             payload["sequential_image_generation_options"] = {"max_images": request.count}
         return payload
 
+    spec = IMAGE_MODELS[request.model_variant]
+    if request.model_variant == "seedream_v5_0_pro":
+        payload = {
+            "model": spec["api_model_id"],
+            "prompt": request.prompt,
+            "size": normalize_seedream_5_pro_size(request.size),
+            "response_format": "url",
+            "watermark": False,
+            "optimize_prompt_options": {"mode": "standard"},
+        }
+        if image_inputs:
+            payload["image"] = image_inputs if len(image_inputs) > 1 else image_inputs[0]
+        if request.output_format in {"jpeg", "png"}:
+            payload["output_format"] = request.output_format
+        return payload
+
     payload = {
-        "model": IMAGE_MODELS["seedream_v5_0"]["api_model_id"],
+        "model": spec["api_model_id"],
         "prompt": request.prompt,
         "size": normalize_seedream_5_size(request.size),
         "response_format": "url",
@@ -354,7 +389,7 @@ class VolcengineImageGateway:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json; charset=utf-8",
-            "User-Agent": f"{APP_DISPLAY_NAME}/0.1",
+            "User-Agent": HTTP_USER_AGENT,
         }
 
     @staticmethod
@@ -563,7 +598,7 @@ class VolcengineVideoGateway:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"{APP_DISPLAY_NAME}/0.1",
+            "User-Agent": HTTP_USER_AGENT,
         }
 
     @staticmethod

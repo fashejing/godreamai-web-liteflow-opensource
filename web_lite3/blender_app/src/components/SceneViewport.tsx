@@ -1,12 +1,14 @@
-import { Line, OrbitControls, TransformControls } from '@react-three/drei'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Html, Line, OrbitControls, TransformControls } from '@react-three/drei'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
   type RefObject,
 } from 'react'
 import {
@@ -15,12 +17,24 @@ import {
   Expand,
   Lamp,
   Layers,
+  Palette,
   Pause,
   Play,
   Route,
+  RotateCcw,
   type LucideIcon,
 } from 'lucide-react'
-import type { Group, PerspectiveCamera } from 'three'
+import {
+  Box3,
+  MOUSE,
+  Plane,
+  Raycaster,
+  Vector2,
+  Vector3,
+  type Group,
+  type Object3D,
+  type PerspectiveCamera,
+} from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { SceneEnvironment } from './SceneEnvironment'
 import {
@@ -42,7 +56,6 @@ import {
   type CameraSample,
 } from '../scene/camera'
 import {
-  SCENE_CAMERA_FAR,
   SCENE_FOG_FAR,
   SCENE_FOG_NEAR,
 } from '../scene/environment'
@@ -56,6 +69,14 @@ import type {
   Vec3,
 } from '../scene/types'
 import { sampleObjectMotionTransform } from '../scene/objectMotion'
+import {
+  DEFAULT_VIEW_CENTER,
+  DEFAULT_VIEW_SIZE,
+  VIEW_RESET_DIRECTION,
+  getAdaptiveMarkerScale,
+  getFrameDistanceForBounds,
+  getSceneObjectBounds,
+} from '../scene/viewFrame'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -78,9 +99,11 @@ type SceneViewportProps = {
   snapToGrid: boolean
   placementSnap: boolean
   visibility: ViewportVisibility
+  cameraSegmentColors: boolean
   fullscreenActive?: boolean
   playing: boolean
   onToggleVisibility: (key: keyof ViewportVisibility) => void
+  onToggleCameraSegmentColors: () => void
   onToggleFullscreen: () => void
   onTogglePlay: () => void
   onSelectObject: (objectId: string | null) => void
@@ -129,6 +152,79 @@ const viewportTheme = {
   gridSection: string
   shadow: string
 }>
+
+const defaultCameraSegmentColor = '#24b47e'
+
+const cameraSegmentPalette = [
+  '#24b47e',
+  '#ff5c7a',
+  '#00d9ff',
+  '#ffc857',
+  '#b86bff',
+  '#ff8a3d',
+]
+
+const getCameraSegmentColor = (index: number, enabled: boolean): string =>
+  enabled
+    ? cameraSegmentPalette[index % cameraSegmentPalette.length]
+    : defaultCameraSegmentColor
+
+const editViewNear = 0.03
+const editViewFar = 2000
+const editViewMinDistance = 0.04
+const markerTransformControlSize = 0.55
+
+const defaultMouseButtons = {
+  LEFT: MOUSE.ROTATE,
+  MIDDLE: MOUSE.DOLLY,
+  RIGHT: MOUSE.PAN,
+}
+
+const spacePanMouseButtons = {
+  LEFT: MOUSE.PAN,
+  MIDDLE: MOUSE.DOLLY,
+  RIGHT: MOUSE.PAN,
+}
+
+const segmentLabelPosition = (points: Vec3[]): Vec3 => {
+  const point = points[Math.floor(points.length / 2)] ?? points[0] ?? ([0, 0, 0] as Vec3)
+
+  return [point[0], point[1] + 0.22, point[2]]
+}
+
+const isTextEditingTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+const AdaptiveMarkerVisual = ({
+  children,
+  selected = false,
+}: {
+  children: ReactNode
+  selected?: boolean
+}) => {
+  const visualRef = useRef<Group>(null)
+  const camera = useThree((state) => state.camera)
+  const worldPositionRef = useRef(new Vector3())
+
+  useFrame(() => {
+    if (!visualRef.current) {
+      return
+    }
+
+    const distance = visualRef.current
+      .getWorldPosition(worldPositionRef.current)
+      .distanceTo(camera.position)
+    const scale = getAdaptiveMarkerScale(distance) * (selected ? 1.08 : 1)
+    visualRef.current.scale.setScalar(scale)
+  })
+
+  return <group ref={visualRef}>{children}</group>
+}
 
 type TransformableObjectProps = {
   sceneObject: SceneDocument['objects'][number]
@@ -196,6 +292,7 @@ const TransformableObject = ({
   onTransformObject,
 }: TransformableObjectProps) => {
   const groupRef = useRef<Group>(null)
+  const pendingTransformRef = useRef<Transform | null>(null)
   const [ready, setReady] = useState(false)
   const sampledTransform = useMemo(
     () => sampleObjectMotionTransform(sceneObject, currentTimeSec),
@@ -205,21 +302,31 @@ const TransformableObject = ({
     setReady(true)
   }, [])
 
-  const pushTransform = () => {
+  const getCurrentBaseTransform = useCallback(() => {
     if (!groupRef.current) {
-      return
+      return null
     }
 
-    onTransformObject(
-      sceneObject.id,
-      groupToBaseTransform(
-        groupRef.current,
-        sceneObject.transform,
-        sampledTransform,
-        transformMode,
-      ),
+    return groupToBaseTransform(
+      groupRef.current,
+      sceneObject.transform,
+      sampledTransform,
+      transformMode,
     )
-  }
+  }, [sampledTransform, sceneObject.transform, transformMode])
+
+  const captureTransform = useCallback(() => {
+    pendingTransformRef.current = getCurrentBaseTransform()
+  }, [getCurrentBaseTransform])
+
+  const commitTransform = useCallback(() => {
+    const nextTransform = getCurrentBaseTransform() ?? pendingTransformRef.current
+    pendingTransformRef.current = null
+
+    if (nextTransform) {
+      onTransformObject(sceneObject.id, nextTransform)
+    }
+  }, [getCurrentBaseTransform, onTransformObject, sceneObject.id])
 
   return (
     <>
@@ -243,8 +350,8 @@ const TransformableObject = ({
           translationSnap={snapToGrid ? 0.25 : null}
           rotationSnap={snapToGrid ? Math.PI / 12 : null}
           scaleSnap={snapToGrid ? 0.1 : null}
-          onObjectChange={pushTransform}
-          onMouseUp={pushTransform}
+          onObjectChange={captureTransform}
+          onMouseUp={commitTransform}
         />
       ) : null}
     </>
@@ -291,18 +398,21 @@ const EditableKeyframeMarker = ({
           onSelectKeyframe(keyframe.id)
         }}
       >
-        <mesh>
-          <sphereGeometry args={[selected ? 0.14 : 0.1, 20, 14]} />
-          <meshStandardMaterial
-            color={selected ? '#ffb84d' : '#006edc'}
-            roughness={0.35}
-          />
-        </mesh>
+        <AdaptiveMarkerVisual selected={selected}>
+          <mesh>
+            <sphereGeometry args={[selected ? 0.14 : 0.1, 20, 14]} />
+            <meshStandardMaterial
+              color={selected ? '#ffb84d' : '#006edc'}
+              roughness={0.35}
+            />
+          </mesh>
+        </AdaptiveMarkerVisual>
       </group>
       {selected && ready && markerRef.current ? (
         <TransformControls
           object={markerRef.current}
           mode="translate"
+          size={markerTransformControlSize}
           translationSnap={0.1}
           onObjectChange={pushPosition}
           onMouseUp={pushPosition}
@@ -314,11 +424,13 @@ const EditableKeyframeMarker = ({
 
 const EditableTargetMarker = ({
   keyframe,
+  label,
   selected,
   onSelectKeyframe,
   onMoveKeyframeTarget,
 }: {
   keyframe: CameraKeyframe
+  label: number
   selected: boolean
   onSelectKeyframe: (keyframeId: string) => void
   onMoveKeyframeTarget: (keyframeId: string, target: Vec3) => void
@@ -346,28 +458,54 @@ const EditableTargetMarker = ({
     <>
       <group
         ref={markerRef}
+        renderOrder={selected ? 40 : 30}
         position={keyframe.target}
         onPointerDown={(event) => {
           event.stopPropagation()
           onSelectKeyframe(keyframe.id)
         }}
       >
-        <mesh>
-          <sphereGeometry args={[selected ? 0.13 : 0.095, 20, 14]} />
-          <meshStandardMaterial
-            color={selected ? '#d457ff' : '#8d4fd8'}
-            roughness={0.36}
-          />
-        </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[selected ? 0.24 : 0.18, 0.012, 8, 28]} />
-          <meshStandardMaterial color="#8d4fd8" roughness={0.42} />
-        </mesh>
+        <AdaptiveMarkerVisual selected={selected}>
+          <mesh renderOrder={selected ? 41 : 31}>
+            <sphereGeometry args={[selected ? 0.17 : 0.115, 20, 14]} />
+            <meshBasicMaterial
+              color={selected ? '#d457ff' : '#8d4fd8'}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={selected ? 42 : 32}>
+            <torusGeometry args={[selected ? 0.32 : 0.24, 0.014, 8, 32]} />
+            <meshBasicMaterial color="#d457ff" depthTest={false} toneMapped={false} />
+          </mesh>
+          <Html
+            position={[0, selected ? 0.34 : 0.28, 0]}
+            center
+            distanceFactor={2.4}
+            zIndexRange={[30, 0]}
+          >
+            <button
+              type="button"
+              className={`camera-target-screen-handle ${selected ? 'is-selected' : ''}`}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                onSelectKeyframe(keyframe.id)
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onSelectKeyframe(keyframe.id)
+              }}
+            >
+              方向 {label}
+            </button>
+          </Html>
+        </AdaptiveMarkerVisual>
       </group>
       {selected && ready && markerRef.current ? (
         <TransformControls
           object={markerRef.current}
           mode="translate"
+          size={markerTransformControlSize}
           translationSnap={0.1}
           onObjectChange={pushTarget}
           onMouseUp={pushTarget}
@@ -394,10 +532,12 @@ const DirectionCone = ({
 
   return (
     <group ref={coneRef} position={position}>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.2]}>
-        <coneGeometry args={[0.13, 0.34, 4]} />
-        <meshStandardMaterial color={color} roughness={0.62} />
-      </mesh>
+      <AdaptiveMarkerVisual>
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.2]}>
+          <coneGeometry args={[0.13, 0.34, 4]} />
+          <meshStandardMaterial color={color} roughness={0.62} />
+        </mesh>
+      </AdaptiveMarkerVisual>
     </group>
   )
 }
@@ -412,11 +552,13 @@ const EditableCameraPath = ({
   onMoveKeyframeTarget,
   onMoveAimAnchor,
   onMoveCurveControl,
+  cameraSegmentColors,
 }: {
   scene: SceneDocument
   assets: AssetDefinition[]
   currentTimeSec: number
   selectedKeyframeId: string | null
+  cameraSegmentColors: boolean
   onSelectKeyframe: (keyframeId: string) => void
   onMoveKeyframePosition: (keyframeId: string, position: Vec3) => void
   onMoveKeyframeTarget: (keyframeId: string, target: Vec3) => void
@@ -445,14 +587,33 @@ const EditableCameraPath = ({
   return (
     <>
       {timelineMode === 'motion'
-        ? segments.map((segment) => (
-            <Line
-              key={`line-${segment.from.id}`}
-              points={sampleSegmentPoints(segment.from, segment.to, 32)}
-              color="#24b47e"
-              lineWidth={2.6}
-            />
-          ))
+        ? segments.map((segment) => {
+            const points = sampleSegmentPoints(segment.from, segment.to, 32)
+            const segmentColor = getCameraSegmentColor(segment.index, cameraSegmentColors)
+
+            return (
+              <group key={`segment-${segment.from.id}`}>
+                <Line
+                  points={points}
+                  color={segmentColor}
+                  lineWidth={2.6}
+                />
+                <Html
+                  position={segmentLabelPosition(points)}
+                  center
+                  distanceFactor={3}
+                  zIndexRange={[20, 0]}
+                >
+                  <div
+                    className="camera-segment-label"
+                    style={{ '--segment-color': segmentColor } as CSSProperties}
+                  >
+                    轨迹 {segment.index + 1}
+                  </div>
+                </Html>
+              </group>
+            )
+          })
         : keyframes.slice(0, -1).map((keyframe, index) => (
             <Line
               key={`shot-order-${keyframe.id}`}
@@ -510,10 +671,11 @@ const EditableCameraPath = ({
           ))
         : null}
       {!aimAnchorEnabled
-        ? keyframes.map((keyframe) => (
+        ? keyframes.map((keyframe, index) => (
             <EditableTargetMarker
               key={`target-${keyframe.id}`}
               keyframe={keyframe}
+              label={index + 1}
               selected={selectedKeyframeId === keyframe.id}
               onSelectKeyframe={onSelectKeyframe}
               onMoveKeyframeTarget={onMoveKeyframeTarget}
@@ -521,13 +683,17 @@ const EditableCameraPath = ({
           ))
         : null}
       {snapPoints.map((point) => (
-        <mesh key={point.id} position={point.position}>
-          <sphereGeometry args={[0.045, 12, 8]} />
-          <meshStandardMaterial
-            color={point.kind === 'object' ? '#ffc857' : '#8d4fd8'}
-            roughness={0.45}
-          />
-        </mesh>
+        <group key={point.id} position={point.position}>
+          <AdaptiveMarkerVisual>
+            <mesh>
+              <sphereGeometry args={[0.045, 12, 8]} />
+              <meshStandardMaterial
+                color={point.kind === 'object' ? '#ffc857' : '#8d4fd8'}
+                roughness={0.45}
+              />
+            </mesh>
+          </AdaptiveMarkerVisual>
+        </group>
       ))}
       <AimAnchorMarker
         enabled={aimAnchorEnabled}
@@ -586,25 +752,28 @@ const AimAnchorMarker = ({
           setSelected(true)
         }}
       >
-        <mesh rotation={[Math.PI / 4, 0, Math.PI / 4]}>
-          <boxGeometry args={[selected ? 0.24 : 0.18, selected ? 0.24 : 0.18, selected ? 0.24 : 0.18]} />
-          <meshStandardMaterial
-            color={enabled ? '#ff5c7a' : '#ffc857'}
-            roughness={0.34}
-          />
-        </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[selected ? 0.38 : 0.3, 0.012, 8, 32]} />
-          <meshStandardMaterial
-            color={enabled ? '#ff5c7a' : '#ffc857'}
-            roughness={0.42}
-          />
-        </mesh>
+        <AdaptiveMarkerVisual selected={selected}>
+          <mesh rotation={[Math.PI / 4, 0, Math.PI / 4]}>
+            <boxGeometry args={[selected ? 0.24 : 0.18, selected ? 0.24 : 0.18, selected ? 0.24 : 0.18]} />
+            <meshStandardMaterial
+              color={enabled ? '#ff5c7a' : '#ffc857'}
+              roughness={0.34}
+            />
+          </mesh>
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[selected ? 0.38 : 0.3, 0.012, 8, 32]} />
+            <meshStandardMaterial
+              color={enabled ? '#ff5c7a' : '#ffc857'}
+              roughness={0.42}
+            />
+          </mesh>
+        </AdaptiveMarkerVisual>
       </group>
       {selected && ready && markerRef.current ? (
         <TransformControls
           object={markerRef.current}
           mode="translate"
+          size={markerTransformControlSize}
           translationSnap={0.05}
           onObjectChange={pushAnchor}
           onMouseUp={pushAnchor}
@@ -656,15 +825,18 @@ const CurveControlMarker = ({
           onSelect()
         }}
       >
-        <mesh>
-          <sphereGeometry args={[selected ? 0.13 : 0.09, 18, 12]} />
-          <meshStandardMaterial color="#ffb84d" roughness={0.4} />
-        </mesh>
+        <AdaptiveMarkerVisual selected={selected}>
+          <mesh>
+            <sphereGeometry args={[selected ? 0.13 : 0.09, 18, 12]} />
+            <meshStandardMaterial color="#ffb84d" roughness={0.4} />
+          </mesh>
+        </AdaptiveMarkerVisual>
       </group>
       {selected && ready && markerRef.current ? (
         <TransformControls
           object={markerRef.current}
           mode="translate"
+          size={markerTransformControlSize}
           translationSnap={0.1}
           onObjectChange={pushControl}
           onMouseUp={pushControl}
@@ -710,15 +882,18 @@ const LightPositionMarker = ({
   return (
     <>
       <group ref={markerRef} position={position}>
-        <mesh>
-          <sphereGeometry args={[0.12, 18, 12]} />
-          <meshStandardMaterial color="#ccff00" emissive="#ccff00" emissiveIntensity={0.25} />
-        </mesh>
+        <AdaptiveMarkerVisual>
+          <mesh>
+            <sphereGeometry args={[0.12, 18, 12]} />
+            <meshStandardMaterial color="#ccff00" emissive="#ccff00" emissiveIntensity={0.25} />
+          </mesh>
+        </AdaptiveMarkerVisual>
       </group>
       {ready && markerRef.current ? (
         <TransformControls
           object={markerRef.current}
           mode="translate"
+          size={markerTransformControlSize}
           translationSnap={0.1}
           onObjectChange={pushPosition}
           onMouseUp={pushPosition}
@@ -763,19 +938,22 @@ const LightTargetMarker = ({
   return (
     <>
       <group ref={markerRef} position={target}>
-        <mesh>
-          <sphereGeometry args={[0.095, 18, 12]} />
-          <meshStandardMaterial color="#00f5ff" emissive="#00f5ff" emissiveIntensity={0.2} />
-        </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.22, 0.01, 8, 28]} />
-          <meshStandardMaterial color="#00f5ff" />
-        </mesh>
+        <AdaptiveMarkerVisual>
+          <mesh>
+            <sphereGeometry args={[0.095, 18, 12]} />
+            <meshStandardMaterial color="#00f5ff" emissive="#00f5ff" emissiveIntensity={0.2} />
+          </mesh>
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.22, 0.01, 8, 28]} />
+            <meshStandardMaterial color="#00f5ff" />
+          </mesh>
+        </AdaptiveMarkerVisual>
       </group>
       {ready && markerRef.current ? (
         <TransformControls
           object={markerRef.current}
           mode="translate"
+          size={markerTransformControlSize}
           translationSnap={0.1}
           onObjectChange={pushTarget}
           onMouseUp={pushTarget}
@@ -875,6 +1053,151 @@ const ViewReporter = ({
   return null
 }
 
+const isVisibleMeshTarget = (object: Object3D): boolean => {
+  if (!(object as Object3D & { isMesh?: boolean }).isMesh) {
+    return false
+  }
+
+  let current: Object3D | null = object
+  while (current) {
+    if (!current.visible) {
+      return false
+    }
+    current = current.parent
+  }
+
+  return true
+}
+
+const CursorOrbitTarget = ({
+  cameraView,
+  spacePanning,
+  controlsRef,
+  onViewChange,
+}: {
+  cameraView: boolean
+  spacePanning: boolean
+  controlsRef: RefObject<OrbitControlsImpl | null>
+  onViewChange: () => void
+}) => {
+  const camera = useThree((state) => state.camera)
+  const gl = useThree((state) => state.gl)
+  const threeScene = useThree((state) => state.scene)
+  const raycasterRef = useRef(new Raycaster())
+  const pointerRef = useRef(new Vector2())
+  const floorPlaneRef = useRef(new Plane(new Vector3(0, 1, 0), 0))
+  const fallbackTargetRef = useRef(new Vector3())
+
+  useEffect(() => {
+    const canvas = gl.domElement
+    const raycaster = raycasterRef.current
+    const pointer = pointerRef.current
+    const floorPlane = floorPlaneRef.current
+
+    const resolvePointerTarget = (event: PointerEvent): Vector3 | null => {
+      const rect = canvas.getBoundingClientRect()
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      )
+      raycaster.setFromCamera(pointer, camera)
+
+      const hit = raycaster
+        .intersectObjects(threeScene.children, true)
+        .find((intersection) => isVisibleMeshTarget(intersection.object))
+
+      if (hit) {
+        return hit.point.clone()
+      }
+
+      return raycaster.ray.intersectPlane(floorPlane, fallbackTargetRef.current)
+        ? fallbackTargetRef.current.clone()
+        : null
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (cameraView || spacePanning || (event.button !== 0 && event.button !== 1 && event.button !== 2)) {
+        return
+      }
+
+      const controls = controlsRef.current
+      if (!controls?.enabled) {
+        return
+      }
+
+      const target = resolvePointerTarget(event)
+      if (!target) {
+        return
+      }
+
+      const cameraOffset = camera.position.clone().sub(controls.target)
+      controls.target.copy(target)
+      camera.position.copy(target).add(cameraOffset)
+      controls.update()
+      onViewChange()
+    }
+
+    canvas.addEventListener('pointerdown', handlePointerDown, true)
+
+    return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown, true)
+    }
+  }, [camera, cameraView, controlsRef, gl, onViewChange, spacePanning, threeScene])
+
+  return null
+}
+
+const ViewResetController = ({
+  objects,
+  assets,
+  resetTick,
+  controlsRef,
+  onViewChange,
+}: {
+  objects: SceneDocument['objects']
+  assets: AssetDefinition[]
+  resetTick: number
+  controlsRef: RefObject<OrbitControlsImpl | null>
+  onViewChange: () => void
+}) => {
+  const camera = useThree((state) => state.camera)
+  const size = useThree((state) => state.size)
+  const lastResetTickRef = useRef(0)
+
+  useEffect(() => {
+    if (resetTick === lastResetTickRef.current) {
+      return
+    }
+
+    lastResetTickRef.current = resetTick
+    if (resetTick === 0) {
+      return
+    }
+
+    const perspectiveCamera = camera as PerspectiveCamera
+    const bounds = getSceneObjectBounds(objects, assets) ?? new Box3().setFromCenterAndSize(
+      new Vector3(...DEFAULT_VIEW_CENTER),
+      new Vector3(...DEFAULT_VIEW_SIZE),
+    )
+    const center = bounds.getCenter(new Vector3())
+    const aspect = size.width / Math.max(size.height, 1)
+    const distance = getFrameDistanceForBounds(bounds, perspectiveCamera.fov, aspect)
+    const direction = new Vector3(...VIEW_RESET_DIRECTION).normalize()
+
+    perspectiveCamera.near = editViewNear
+    perspectiveCamera.far = editViewFar
+    perspectiveCamera.position.copy(center).add(direction.multiplyScalar(distance))
+    perspectiveCamera.lookAt(center)
+    perspectiveCamera.updateProjectionMatrix()
+
+    controlsRef.current?.target.copy(center)
+    controlsRef.current?.update()
+    onViewChange()
+  }, [assets, camera, controlsRef, objects, onViewChange, resetTick, size.height, size.width])
+
+  return null
+}
+
 export const SceneViewport = ({
   scene,
   assets,
@@ -886,9 +1209,11 @@ export const SceneViewport = ({
   snapToGrid,
   placementSnap,
   visibility,
+  cameraSegmentColors,
   fullscreenActive = false,
   playing,
   onToggleVisibility,
+  onToggleCameraSegmentColors,
   onToggleFullscreen,
   onTogglePlay,
   onSelectObject,
@@ -904,6 +1229,44 @@ export const SceneViewport = ({
 }: SceneViewportProps) => {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const [viewChangeTick, setViewChangeTick] = useState(0)
+  const [resetViewTick, setResetViewTick] = useState(0)
+  const [spacePanning, setSpacePanning] = useState(false)
+  const bumpViewChangeTick = useCallback(() => {
+    setViewChangeTick((tick) => tick + 1)
+  }, [])
+  const resetView = useCallback(() => {
+    setResetViewTick((tick) => tick + 1)
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || isTextEditingTarget(event.target)) {
+        return
+      }
+
+      event.preventDefault()
+      setSpacePanning(true)
+    }
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') {
+        return
+      }
+
+      event.preventDefault()
+      setSpacePanning(false)
+    }
+    const stopSpacePanning = () => setSpacePanning(false)
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', stopSpacePanning)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', stopSpacePanning)
+    }
+  }, [])
   const timelineMode = getTimelineMode(scene)
   const colors = viewportTheme[uiTheme]
   const renderAspect = scene.renderSettings.width / scene.renderSettings.height
@@ -913,7 +1276,7 @@ export const SceneViewport = ({
 
   return (
     <section
-      className={`viewport-shell ${cameraView ? 'is-camera-view' : ''}`}
+      className={`viewport-shell ${cameraView ? 'is-camera-view' : ''} ${spacePanning ? 'is-space-panning' : ''}`}
       aria-label="3D viewport"
     >
       <div className="viewport-topbar">
@@ -938,6 +1301,26 @@ export const SceneViewport = ({
                 </button>
               )
             })}
+            <button
+              type="button"
+              className={cameraSegmentColors ? 'active' : ''}
+              title={cameraSegmentColors ? '恢复统一绿色轨迹' : '用颜色区分每段轨迹'}
+              aria-pressed={cameraSegmentColors}
+              disabled={timelineMode !== 'motion' || !visibility.cameraPath}
+              onClick={onToggleCameraSegmentColors}
+            >
+              <Palette size={13} />
+              <span>分段颜色</span>
+            </button>
+            <button
+              type="button"
+              title={cameraView ? '最终镜头模式下不可重置编辑视角' : '重置到包含全部物件的视图'}
+              disabled={cameraView}
+              onClick={resetView}
+            >
+              <RotateCcw size={13} />
+              <span>重置视图</span>
+            </button>
           </div>
           <button
             type="button"
@@ -967,7 +1350,7 @@ export const SceneViewport = ({
         <span>
           {timelineMode === 'shots'
             ? '蓝点=固定机位，青色虚线=切换顺序，播放时按镜头硬切。'
-            : '绿线=路线，蓝点=镜头位置，红点=锁定锚点。'}
+            : `${cameraSegmentColors ? '彩色线' : '绿线'}=路线，编号=轨迹段，蓝点=镜头位置，方向按钮=朝向目标。`}
           {placementSnap ? ' 同高磁吸开启。' : ' 自由摆放。'}
         </span>
       </div>
@@ -984,7 +1367,7 @@ export const SceneViewport = ({
           className="viewport-canvas"
           shadows
           dpr={cameraView ? 1 : [1, 1.6]}
-          camera={{ position: [-7, 5, 7], fov: 48, near: 0.1, far: SCENE_CAMERA_FAR }}
+          camera={{ position: [-7, 5, 7], fov: 48, near: editViewNear, far: editViewFar }}
           onPointerMissed={() => onSelectObject(null)}
         >
           <color attach="background" args={[colors.background]} />
@@ -993,6 +1376,19 @@ export const SceneViewport = ({
           {visibility.lights ? (
             <EditableLightGizmos scene={scene} onUpdateLight={onUpdateLight} />
           ) : null}
+          <CursorOrbitTarget
+            cameraView={cameraView}
+            spacePanning={spacePanning}
+            controlsRef={controlsRef}
+            onViewChange={bumpViewChangeTick}
+          />
+          <ViewResetController
+            objects={visibleObjects}
+            assets={assets}
+            resetTick={resetViewTick}
+            controlsRef={controlsRef}
+            onViewChange={bumpViewChangeTick}
+          />
           <Suspense fallback={null}>
             <SceneEnvironment
               renderSettings={scene.renderSettings}
@@ -1027,6 +1423,7 @@ export const SceneViewport = ({
                 onMoveKeyframeTarget={onMoveKeyframeTarget}
                 onMoveAimAnchor={onMoveAimAnchor}
                 onMoveCurveControl={onMoveCurveControl}
+                cameraSegmentColors={cameraSegmentColors}
               />
             ) : null}
             <CameraFollower
@@ -1045,11 +1442,14 @@ export const SceneViewport = ({
             ref={controlsRef}
             makeDefault
             enabled={!cameraView}
-            target={[0, 1.2, 0]}
-            minDistance={0.08}
+            target={DEFAULT_VIEW_CENTER}
+            minDistance={editViewMinDistance}
+            mouseButtons={spacePanning ? spacePanMouseButtons : defaultMouseButtons}
             zoomSpeed={0.7}
+            zoomToCursor
+            screenSpacePanning
             maxPolarAngle={Math.PI * 0.48}
-            onChange={() => setViewChangeTick((tick) => tick + 1)}
+            onChange={bumpViewChangeTick}
           />
         </Canvas>
       </div>

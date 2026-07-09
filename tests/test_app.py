@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import zipfile
 from io import BytesIO
 from pathlib import Path
 
@@ -20,12 +21,14 @@ def test_model_whitelist_exact():
         "kling_image_v3_omni",
         "seedream_v4_5",
         "seedream_v5_0",
+        "seedream_v5_0_pro",
     ]
     assert sorted(VIDEO_MODELS.keys()) == [
         "kling_3_0_omni",
         "kling_3_0_turbo",
         "seedance_2_0",
         "seedance_2_0_fast",
+        "seedance_2_0_mini",
     ]
 
 
@@ -57,10 +60,12 @@ def test_pages_load(tmp_path):
     assert library_page.status_code == 200
     assert settings_page.status_code == 200
     assert "Seedream 5.0 Lite" in image_page.text
+    assert "Seedream 5.0 Pro" in image_page.text
     assert "Kling Image 3.0" in image_page.text
     assert "图生图" in image_page.text
     assert "GoImage2" not in image_page.text
     assert "首尾帧图生视频" in video_page.text
+    assert "Seedance 2.0 Mini" in video_page.text
     assert "Kling 3.0 Turbo" in video_page.text
     assert "\\u56fe\\u751f\\u89c6\\u9891\\uff08\\u9996\\u5e27+\\u5c3e\\u5e27\\uff09" in video_page.text
     assert "多模态参考生视频" in video_page.text
@@ -164,7 +169,7 @@ def test_pages_load(tmp_path):
     assert 'id="openaiApiKey"' not in settings_page.text
     assert 'id="openaiApiKeyHistorySelect"' not in settings_page.text
     assert 'id="klingApiKey"' in settings_page.text
-    assert 'id="klingApiKeyHistorySelect"' in settings_page.text
+    assert 'id="klingApiKeyHistorySelect"' not in settings_page.text
     assert 'src="/static/js/settings.js?v=' in settings_page.text
     assert '<select id="openaiNetworkMode">' not in settings_page.text
     assert '<select id="googleNetworkMode">' not in settings_page.text
@@ -190,6 +195,13 @@ def test_pages_load(tmp_path):
     assert "国内计费文档" not in settings_page.text
     assert 'value="1080p"' in video_page.text
     assert 'class="blender-app-frame"' in blender_page.text
+    assert 'id="blenderAssetUploadButton"' in blender_page.text
+    assert 'src="/static/js/blender_host.js?v=' in blender_page.text
+    assert "Poly Haven" in blender_page.text
+    assert "Sketchfab" in blender_page.text
+    assert "BlenderKit" in blender_page.text
+    assert "Quaternius" in blender_page.text
+    assert "Kenney" in blender_page.text
     assert 'src="/blender/app"' in blender_page.text
     assert "井鸽AI影视套件" in blender_page.text
     assert "GoDreamAI-Blender" not in blender_page.text
@@ -251,6 +263,21 @@ def test_blender_assets_and_export(tmp_path):
     assert obj_payload["format"] == "obj"
     assert obj_payload["url"].startswith("/uploads/")
     assert client.get(obj_payload["url"]).status_code == 200
+
+    package_buffer = BytesIO()
+    with zipfile.ZipFile(package_buffer, "w") as archive:
+        archive.writestr("plastic_crate_03_4k/plastic_crate_03_4k.gltf", b'{"asset":{"version":"2.0"}}')
+        archive.writestr("plastic_crate_03_4k/textures/base_color.jpg", b"texture-bytes")
+    package_import = client.post(
+        "/api/assets/import",
+        files={"asset": ("plastic_crate_03_4k.zip", package_buffer.getvalue(), "application/zip")},
+    )
+    assert package_import.status_code == 200
+    package_payload = package_import.json()
+    assert package_payload["kind"] == "imported"
+    assert package_payload["format"] == "gltf"
+    assert package_payload["label"] == "plastic_crate_03_4k"
+    assert client.get(package_payload["url"]).status_code == 200
 
     blend_import = client.post(
         "/api/assets/import",
@@ -426,7 +453,6 @@ def test_history_api_returns_history_counts_for_empty_current_kind(tmp_path):
             "theme": "light",
             "storage_dir": str(storage_dir),
             "volcengine_api_key": "test-key",
-            "google_api_key": "google-test-key",
         },
     )
     history_store = app.state.history_store_registry.for_storage_dir(str(storage_dir))
@@ -458,7 +484,6 @@ def test_history_api_repairs_video_record_with_local_path_but_no_artifacts(tmp_p
             "theme": "light",
             "storage_dir": str(storage_dir),
             "volcengine_api_key": "test-key",
-            "google_api_key": "google-test-key",
         },
     )
     storage = ensure_storage_paths(storage_dir)
@@ -506,7 +531,6 @@ def test_history_api_prefers_local_video_artifact_when_remote_artifact_is_stale(
             "theme": "light",
             "storage_dir": str(storage_dir),
             "volcengine_api_key": "test-key",
-            "google_api_key": "google-test-key",
         },
     )
     storage = ensure_storage_paths(storage_dir)
@@ -561,7 +585,6 @@ def test_history_api_hides_local_repair_failure_for_remote_sync_video(tmp_path):
             "theme": "light",
             "storage_dir": str(storage_dir),
             "volcengine_api_key": "test-key",
-            "google_api_key": "google-test-key",
         },
     )
     history_store = app.state.history_store_registry.for_storage_dir(str(storage_dir))

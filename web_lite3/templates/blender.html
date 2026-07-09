@@ -1,12 +1,43 @@
 {% extends "base.html" %}
 
+{% block sidebar_controls %}
+<section class="blender-import-panel" aria-labelledby="blenderImportTitle">
+  <div class="blender-import-title" id="blenderImportTitle">3D资产导入</div>
+  <p class="blender-import-copy">从免费网站下载模型后，直接上传到当前启动器 Blender 频道。</p>
+  <input
+    id="blenderAssetUpload"
+    class="blender-upload-input"
+    type="file"
+    accept=".zip,.glb,.gltf,.obj,.stl,.fbx,.dae,.ply,.3mf,.3ds,.blend"
+  >
+  <button id="blenderAssetUploadButton" class="primary-button blender-upload-button" type="button">
+    上传3D模型
+  </button>
+  <div id="blenderImportStatus" class="blender-import-status" role="status">
+    支持 ZIP / GLB / GLTF / OBJ / STL / FBX / DAE / PLY / 3MF / 3DS / BLEND
+  </div>
+  <div class="blender-format-note">
+    Poly Haven 等贴图包建议上传 ZIP，保留 .bin 与 textures 目录；.blend 需要本机安装 Blender 后自动转换。
+  </div>
+  <div class="blender-source-list" aria-label="免费3D资产网站">
+    <a href="https://polyhaven.com/models" target="_blank" rel="noopener noreferrer">Poly Haven</a>
+    <a href="https://sketchfab.com/3d-models?features=downloadable" target="_blank" rel="noopener noreferrer">Sketchfab</a>
+    <a href="https://www.blenderkit.com/asset-gallery?query=order:-created+is_free:true" target="_blank" rel="noopener noreferrer">BlenderKit</a>
+    <a href="https://quaternius.com/" target="_blank" rel="noopener noreferrer">Quaternius</a>
+    <a href="https://kenney.nl/assets/category:3D" target="_blank" rel="noopener noreferrer">Kenney</a>
+  </div>
+</section>
+{% endblock %}
+
 {% block content %}
 <section class="blender-host-page" aria-label="井鸽AI影视套件">
   <iframe
+    id="blenderLauncherFrame"
     class="blender-app-frame"
     src="/blender/app"
     title="井鸽AI影视套件"
     loading="eager"
   ></iframe>
 </section>
+<script type="module" src="/static/js/blender_host.js?v={{ static_asset_version }}"></script>
 {% endblock %}

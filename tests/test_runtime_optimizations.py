@@ -5,13 +5,26 @@ import json
 import time
 from pathlib import Path
 
-from web_lite3.data_paths import ensure_app_paths
+from web_lite3.constants import APP_HOME_DEFAULT_DIRNAME, APP_HOME_ENV
+from web_lite3.data_paths import ensure_app_paths, resolve_app_home
 from PIL import Image
 
 from web_lite3.files import file_to_api_image_data_url, file_to_data_url
 from web_lite3.history_store import HistoryStore
 from web_lite3.jobs import JobRegistry
 from web_lite3.settings_store import SettingsStore
+
+
+def test_open_source_home_does_not_share_plus_settings(monkeypatch, tmp_path):
+    monkeypatch.delenv(APP_HOME_ENV, raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    home_dir = resolve_app_home()
+
+    assert APP_HOME_ENV == "GODREAMAI_OPENSOURCE_HOME"
+    assert APP_HOME_DEFAULT_DIRNAME == ".godreamai-opensource"
+    assert home_dir == tmp_path / ".godreamai-opensource"
+    assert home_dir.name != ".godreamai-plus"
 
 
 def test_settings_store_cache_invalidates_after_external_write(tmp_path):
@@ -38,6 +51,60 @@ def test_settings_store_cache_invalidates_after_external_write(tmp_path):
     reloaded = store.load()
     assert reloaded.theme == "high_contrast"
     assert reloaded.volcengine_api_key == "sk-b"
+
+
+def test_settings_store_scrubs_api_key_histories_and_legacy_provider_keys(tmp_path):
+    paths = ensure_app_paths(tmp_path / "app-home")
+    paths.settings_file.write_text(
+        json.dumps(
+            {
+                "storage_dir": str(tmp_path / "storage-a"),
+                "volcengine_api_key": "volc-current-fake",
+                "volcengine_api_key_history": ["volc-old-fake"],
+                "kling_api_key": "kling-current-fake",
+                "kling_api_key_history": ["kling-old-fake"],
+                "google_api_key": "google-old-fake",
+                "google_api_key_history": ["google-history-fake"],
+                "openai_api_key": "openai-old-fake",
+                "openai_api_key_history": ["openai-history-fake"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    store = SettingsStore(paths)
+
+    loaded = store.load()
+    raw_after_load = json.loads(paths.settings_file.read_text(encoding="utf-8"))
+    saved = store.save(
+        {
+            "storage_dir": str(tmp_path / "storage-b"),
+            "volcengine_api_key": "volc-new-fake",
+            "kling_api_key": "kling-new-fake",
+            "google_api_key": "google-new-fake",
+            "openai_api_key": "openai-new-fake",
+            "volcengine_api_key_history": ["volc-should-drop-fake"],
+            "kling_api_key_history": ["kling-should-drop-fake"],
+        }
+    )
+    raw = json.loads(paths.settings_file.read_text(encoding="utf-8"))
+
+    assert loaded.volcengine_api_key == "volc-current-fake"
+    assert saved.volcengine_api_key == "volc-new-fake"
+    assert saved.kling_api_key == "kling-new-fake"
+    for key in (
+        "volcengine_api_key_history",
+        "kling_api_key_history",
+        "google_api_key",
+        "google_api_key_history",
+        "openai_api_key",
+        "openai_api_key_history",
+    ):
+        assert key not in loaded.to_dict()
+        assert key not in saved.to_dict()
+        assert key not in raw_after_load
+        assert key not in raw
 
 
 def test_job_registry_prunes_terminal_snapshots():

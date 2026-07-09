@@ -4,13 +4,16 @@ import {
   Crosshair,
   Download,
   Gauge,
+  GripVertical,
   Image as ImageIcon,
   Lightbulb,
+  Link2,
   Magnet,
   Palette,
   Plus,
   Route,
   Trash2,
+  Unlink,
   Upload,
   Video,
   X,
@@ -37,6 +40,7 @@ import type {
   CameraMotionMode,
   CameraMotionSettings,
   CameraCurveType,
+  FloorMaterial,
   ObjectMotion,
   ObjectMotionMode,
   RenderJob,
@@ -68,6 +72,9 @@ type InspectorProps = {
   onUpdateLight: (lightId: string, patch: Partial<SceneLight>) => void
   onDeleteLight: (lightId: string) => void
   onSelectKeyframe: (keyframeId: string) => void
+  onDeleteKeyframe: (keyframeId: string) => void
+  onReorderKeyframe: (draggedKeyframeId: string, targetKeyframeId: string) => void
+  onToggleSegmentConnection: (fromKeyframeId: string) => void
   onMoveKeyframePosition: (keyframeId: string, position: Vec3) => void
   onMoveKeyframeTarget: (keyframeId: string, target: Vec3) => void
   onToggleAimAnchor: () => void
@@ -114,6 +121,16 @@ const cameraMotionModeOptions: Array<{ value: CameraMotionMode; label: string }>
   { value: 'stable', label: '稳定拍摄' },
   { value: 'handheld', label: '手持模式' },
   { value: 'drone', label: '无人机模式' },
+]
+
+const floorMaterialOptions: Array<{ value: FloorMaterial; label: string }> = [
+  { value: 'studio', label: '影棚灰' },
+  { value: 'white', label: '纯白' },
+  { value: 'checker', label: '棋盘格' },
+  { value: 'concrete', label: '混凝土' },
+  { value: 'sand', label: '沙地' },
+  { value: 'grass', label: '草地' },
+  { value: 'asphalt', label: '沥青' },
 ]
 
 const positionRanges: [AxisRange, AxisRange, AxisRange] = [
@@ -603,6 +620,9 @@ export const Inspector = ({
   onUpdateLight,
   onDeleteLight,
   onSelectKeyframe,
+  onDeleteKeyframe,
+  onReorderKeyframe,
+  onToggleSegmentConnection,
   onMoveKeyframePosition,
   onMoveKeyframeTarget,
   onToggleAimAnchor,
@@ -649,6 +669,8 @@ export const Inspector = ({
   const trackedAnchorObject = aimAnchor.targetObjectId
     ? scene.objects.find((object) => object.id === aimAnchor.targetObjectId) ?? null
     : null
+  const [draggedKeyframeId, setDraggedKeyframeId] = useState<string | null>(null)
+  const [dragOverKeyframeId, setDragOverKeyframeId] = useState<string | null>(null)
 
   const updateKeyframePositionAxis = (axisIndex: number, value: number) => {
     if (!selectedKeyframe) {
@@ -859,23 +881,99 @@ export const Inspector = ({
           ) : null}
         </div>
         <div className="keyframe-list">
-          {keyframes.map((keyframe, index) => (
-            <button
-              key={keyframe.id}
-              type="button"
-              className={`keyframe-row ${
-                keyframe.id === selectedKeyframeId ? 'is-selected' : ''
-              }`}
-              onClick={() => onSelectKeyframe(keyframe.id)}
-            >
-              <span>镜头点 {index + 1}</span>
-              <strong>
-                {timelineMode === 'shots'
-                  ? `${getShotDuration(keyframe).toFixed(1)}s`
-                  : `${keyframe.timeSec.toFixed(2)}s`}
-              </strong>
-            </button>
-          ))}
+          {keyframes.map((keyframe, index) => {
+            const hasNextKeyframe = index < keyframes.length - 1
+            const segmentConnected = keyframe.connectToNext !== false
+
+            return (
+              <div key={keyframe.id} className="keyframe-stack">
+                <div
+                  className={`keyframe-row ${
+                    keyframe.id === selectedKeyframeId ? 'is-selected' : ''
+                  } ${
+                    keyframe.id === dragOverKeyframeId &&
+                    draggedKeyframeId !== keyframe.id
+                      ? 'is-drop-target'
+                      : ''
+                  }`}
+                  draggable
+                  onDragStart={(event) => {
+                    setDraggedKeyframeId(keyframe.id)
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('text/plain', keyframe.id)
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    setDragOverKeyframeId(keyframe.id)
+                  }}
+                  onDragLeave={() => {
+                    setDragOverKeyframeId((currentId) =>
+                      currentId === keyframe.id ? null : currentId,
+                    )
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    const sourceKeyframeId =
+                      draggedKeyframeId ||
+                      event.dataTransfer.getData('text/plain')
+                    setDraggedKeyframeId(null)
+                    setDragOverKeyframeId(null)
+
+                    if (sourceKeyframeId && sourceKeyframeId !== keyframe.id) {
+                      onReorderKeyframe(sourceKeyframeId, keyframe.id)
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setDraggedKeyframeId(null)
+                    setDragOverKeyframeId(null)
+                  }}
+                >
+                  <span className="keyframe-drag-handle" title="拖动排序">
+                    <GripVertical size={14} />
+                  </span>
+                  <button
+                    type="button"
+                    className="keyframe-row-main"
+                    onClick={() => onSelectKeyframe(keyframe.id)}
+                  >
+                    <span>镜头点 {index + 1}</span>
+                    <strong>
+                      {timelineMode === 'shots'
+                        ? `${getShotDuration(keyframe).toFixed(1)}s`
+                        : `${keyframe.timeSec.toFixed(2)}s`}
+                    </strong>
+                  </button>
+                  <button
+                    type="button"
+                    className="keyframe-delete-button"
+                    disabled={keyframes.length <= 1}
+                    title="删除镜头点"
+                    aria-label={`删除镜头点 ${index + 1}`}
+                    onClick={() => onDeleteKeyframe(keyframe.id)}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                {timelineMode === 'motion' && hasNextKeyframe ? (
+                  <button
+                    type="button"
+                    className={`keyframe-link-toggle ${
+                      segmentConnected ? 'is-connected' : 'is-disconnected'
+                    }`}
+                    aria-pressed={segmentConnected}
+                    onClick={() => onToggleSegmentConnection(keyframe.id)}
+                  >
+                    {segmentConnected ? <Link2 size={13} /> : <Unlink size={13} />}
+                    <span>
+                      点 {index + 1} 到点 {index + 2}
+                    </span>
+                    <strong>{segmentConnected ? '已连线' : '断开'}</strong>
+                  </button>
+                ) : null}
+              </div>
+            )
+          })}
         </div>
         {selectedKeyframe ? (
           <div className="keyframe-edit-card">
@@ -1206,18 +1304,25 @@ export const Inspector = ({
             />
           </label>
         </div>
-        <label className="export-toggle">
-          <input
-            type="checkbox"
-            checked={renderSettings.fillWhiteGround}
-            onChange={(event) =>
+        <label className="wide-field">
+          <span>地面材质</span>
+          <select
+            value={renderSettings.fillWhiteGround ? 'white' : renderSettings.floorMaterial}
+            onChange={(event) => {
+              const floorMaterial = event.target.value as FloorMaterial
               onUpdateRenderSettings({
                 ...renderSettings,
-                fillWhiteGround: event.target.checked,
+                floorMaterial,
+                fillWhiteGround: floorMaterial === 'white',
               })
-            }
-          />
-          填充白色地面
+            }}
+          >
+            {floorMaterialOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="export-toggle">
           <input

@@ -254,6 +254,11 @@ function currentImageMaxInputImages(modelVariant = $("#modelVariant")?.value || 
   return 14;
 }
 
+function currentImageMaxCount(modelVariant = $("#modelVariant")?.value || defaultImageModelVariant()) {
+  const configured = Number(currentImageUiModel(modelVariant)?.max_count);
+  return Number.isFinite(configured) && configured > 0 ? configured : 15;
+}
+
 function imageModeOptions(modelVariant = $("#modelVariant")?.value || defaultImageModelVariant()) {
   const uiModel = currentImageUiModel(modelVariant);
   const configured = Array.isArray(uiModel?.modes) && uiModel.modes.length
@@ -2185,12 +2190,20 @@ function validateCurrentRequest(params) {
   if (kind === "image") {
     const mode = currentImageMode();
     const isUnifiedInputModel = isUnifiedImageInputModel();
+    const activeImageCount = getActiveImageAssets().length;
+    const maxInputImages = currentImageMaxInputImages(params.model_variant);
+    const maxCount = currentImageMaxCount(params.model_variant);
     if (!isMentionEnabled(mode) && (mentions.length || mentionScan.unknown.length)) {
       throw new Error("当前模式不支持 @ 引用素材");
     }
+    if (activeImageCount > maxInputImages) {
+      throw new Error(`当前模型最多支持 ${maxInputImages} 张参考图`);
+    }
+    if (Number(params.count || 1) > maxCount) {
+      throw new Error(`当前模型一次最多生成 ${maxCount} 张图片`);
+    }
     if (isUnifiedInputModel) {
       const imageCount = (params.input_asset_id ? 1 : 0) + params.reference_asset_ids.length;
-      const maxInputImages = currentImageMaxInputImages(params.model_variant);
       if (mode === "image_edit" && imageCount < 1) {
         throw new Error("图像编辑模式需要上传 1 张编辑图");
       }

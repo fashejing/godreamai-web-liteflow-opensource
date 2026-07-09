@@ -20,7 +20,7 @@
 5. 到设置页填写火山引擎 API Key。
 6. 使用 `/image`、`/video`、`/canvas`、`/library`、`/blender` 完成创作。
 
-默认数据目录是 `~/.godreamai-plus`，也可以用 `GODREAMAI_PLUS_HOME=/custom/path` 指定。
+默认数据目录是 `~/.godreamai-opensource`，也可以用 `GODREAMAI_OPENSOURCE_HOME=/custom/path` 指定。
 
 # opensource-v13.11-blender-Dual
 
@@ -45,4 +45,4 @@
 5. 到设置页填写火山引擎 API Key。
 6. 使用 `/image`、`/video`、`/canvas`、`/library`、`/blender` 完成创作。
 
-默认数据目录是 `~/.godreamai-plus`，也可以用 `GODREAMAI_PLUS_HOME=/custom/path` 指定。
+默认数据目录是 `~/.godreamai-opensource`，也可以用 `GODREAMAI_OPENSOURCE_HOME=/custom/path` 指定。

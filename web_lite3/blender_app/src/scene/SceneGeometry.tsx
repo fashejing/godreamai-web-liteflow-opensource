@@ -21,7 +21,13 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js'
 import { getImportedModelFormat } from './importedFormats'
 import type { AssetDefinition, SceneDocument, SceneObject, Vec3 } from './types'
-import { getActiveCamera, sampleCameraAtTime, sortKeyframes } from './camera'
+import {
+  getActiveCamera,
+  getCameraSegments,
+  sampleCameraAtTime,
+  sampleSegmentPoints,
+  sortKeyframes,
+} from './camera'
 import { getAssetById } from './assets'
 import { defaultSceneLights, kelvinToHex, lightDirectionToPosition } from './lights'
 import {
@@ -46,8 +52,9 @@ type ObjectMeshProps = {
 }
 
 const whiteboxColor = '#f1f3f6'
-const secondaryColor = '#d8dde6'
-const darkLineColor = '#9aa4b2'
+const stableShadowBias = -0.00025
+const stableShadowNormalBias = 0.035
+const stableShadowMapSize = 2048
 
 const stopAndSelect = (
   event: ThreeEvent<PointerEvent>,
@@ -74,8 +81,24 @@ const MatteMaterial = ({
   />
 )
 
-const EdgeMaterial = () => (
-  <meshStandardMaterial color={secondaryColor} metalness={0} roughness={0.86} />
+const EdgeMaterial = ({
+  color,
+  selected,
+}: {
+  color: string
+  selected: boolean
+}) => (
+  <meshStandardMaterial
+    color={color}
+    emissive={selected ? '#86d8ff' : '#000000'}
+    emissiveIntensity={selected ? 0.08 : 0}
+    metalness={0}
+    roughness={0.86}
+    // Decorative detail meshes sit close to matte surfaces, so bias them slightly forward to avoid z-fighting while rotating.
+    polygonOffset
+    polygonOffsetFactor={-0.75}
+    polygonOffsetUnits={-1}
+  />
 )
 
 const PersonPrefab = ({
@@ -96,19 +119,19 @@ const PersonPrefab = ({
     </mesh>
     <mesh position={[-0.18, 0.42, 0]} castShadow>
       <boxGeometry args={[0.16, 0.75, 0.18]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0.18, 0.42, 0]} castShadow>
       <boxGeometry args={[0.16, 0.75, 0.18]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[-0.45, 1.05, 0]} rotation={[0, 0, -0.25]} castShadow>
       <boxGeometry args={[0.14, 0.72, 0.14]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0.45, 1.05, 0]} rotation={[0, 0, 0.25]} castShadow>
       <boxGeometry args={[0.14, 0.72, 0.14]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -121,19 +144,19 @@ const BlockBuildingPrefab = ({
   selected: boolean
 }) => (
   <group>
-    <mesh position={[0, 1.55, 0]} castShadow receiveShadow>
+    <mesh position={[0, 1.55, 0]} castShadow>
       <boxGeometry args={[3, 3.1, 2.2]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0.8, 3.25, -0.2]} castShadow>
       <boxGeometry args={[1.1, 0.35, 1]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     {[-0.8, 0, 0.8].map((x) =>
       [1.2, 2.0].map((y) => (
-        <mesh key={`${x}-${y}`} position={[x, y, 1.12]}>
-          <boxGeometry args={[0.34, 0.38, 0.04]} />
-          <meshStandardMaterial color={darkLineColor} roughness={0.9} />
+        <mesh key={`${x}-${y}`} position={[x, y, 1.13]}>
+          <boxGeometry args={[0.34, 0.38, 0.025]} />
+          <EdgeMaterial color={color} selected={selected} />
         </mesh>
       )),
     )}
@@ -148,17 +171,17 @@ const TowerPrefab = ({
   selected: boolean
 }) => (
   <group>
-    <mesh position={[0, 2.5, 0]} castShadow receiveShadow>
+    <mesh position={[0, 2.5, 0]} castShadow>
       <boxGeometry args={[1.5, 5, 1.5]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 5.18, 0]} castShadow>
       <boxGeometry args={[1.95, 0.32, 1.95]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
-    <mesh position={[0, 0.18, 0]} receiveShadow>
+    <mesh position={[0, 0.18, 0]}>
       <boxGeometry args={[2.1, 0.36, 2.1]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -173,7 +196,7 @@ const TreePrefab = ({
   <group>
     <mesh position={[0, 0.72, 0]} castShadow>
       <cylinderGeometry args={[0.16, 0.2, 1.45, 10]} />
-      <meshStandardMaterial color={secondaryColor} roughness={0.9} />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 1.78, 0]} castShadow>
       <coneGeometry args={[0.86, 1.55, 8]} />
@@ -194,13 +217,13 @@ const CratePrefab = ({
   selected: boolean
 }) => (
   <group>
-    <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
+    <mesh position={[0, 0.5, 0]} castShadow>
       <boxGeometry args={[1, 1, 1]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
-    <mesh position={[0, 1.04, 0]} castShadow>
+    <mesh position={[0, 1.06, 0]} castShadow>
       <boxGeometry args={[1.08, 0.08, 1.08]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -212,16 +235,24 @@ const WallPrefab = ({
   color: string
   selected: boolean
 }) => (
-  <mesh position={[0, 0.8, 0]} castShadow receiveShadow>
+  <mesh position={[0, 0.8, 0]} castShadow>
     <boxGeometry args={[3, 1.6, 0.2]} />
     <MatteMaterial color={color} selected={selected} />
   </mesh>
 )
 
-const Wheel = ({ position }: { position: Vec3 }) => (
+const Wheel = ({
+  position,
+  color,
+  selected,
+}: {
+  position: Vec3
+  color: string
+  selected: boolean
+}) => (
   <mesh position={position} rotation={[Math.PI / 2, 0, 0]} castShadow>
     <cylinderGeometry args={[0.18, 0.18, 0.12, 16]} />
-    <meshStandardMaterial color="#1d232b" roughness={0.7} />
+    <EdgeMaterial color={color} selected={selected} />
   </mesh>
 )
 
@@ -233,16 +264,23 @@ const CarPrefab = ({
   selected: boolean
 }) => (
   <group>
-    <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
+    <mesh position={[0, 0.45, 0]} castShadow>
       <boxGeometry args={[1.65, 0.5, 2.6]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 0.86, -0.2]} castShadow>
       <boxGeometry args={[1.2, 0.42, 1.1]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     {[-0.72, 0.72].map((x) =>
-      [-0.95, 0.95].map((z) => <Wheel key={`${x}-${z}`} position={[x, 0.2, z]} />),
+      [-0.95, 0.95].map((z) => (
+        <Wheel
+          key={`${x}-${z}`}
+          position={[x, 0.2, z]}
+          color={color}
+          selected={selected}
+        />
+      )),
     )}
   </group>
 )
@@ -255,16 +293,23 @@ const TruckPrefab = ({
   selected: boolean
 }) => (
   <group>
-    <mesh position={[0, 0.65, 0.45]} castShadow receiveShadow>
+    <mesh position={[0, 0.65, 0.45]} castShadow>
       <boxGeometry args={[1.95, 0.95, 2.7]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 0.78, -1.45]} castShadow>
       <boxGeometry args={[1.75, 1.15, 1.25]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     {[-0.86, 0.86].map((x) =>
-      [-1.5, -0.2, 1.45].map((z) => <Wheel key={`${x}-${z}`} position={[x, 0.22, z]} />),
+      [-1.5, -0.2, 1.45].map((z) => (
+        <Wheel
+          key={`${x}-${z}`}
+          position={[x, 0.22, z]}
+          color={color}
+          selected={selected}
+        />
+      )),
     )}
   </group>
 )
@@ -281,11 +326,11 @@ const MotorcyclePrefab = ({
       <boxGeometry args={[0.34, 0.28, 1.1]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
-    <Wheel position={[0, 0.22, -0.78]} />
-    <Wheel position={[0, 0.22, 0.78]} />
+    <Wheel position={[0, 0.22, -0.78]} color={color} selected={selected} />
+    <Wheel position={[0, 0.22, 0.78]} color={color} selected={selected} />
     <mesh position={[0, 0.88, -0.12]} castShadow>
       <boxGeometry args={[0.24, 0.34, 0.32]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -304,11 +349,11 @@ const AirplanePrefab = ({
     </mesh>
     <mesh position={[0, 0, 0.05]} castShadow>
       <boxGeometry args={[3.3, 0.08, 0.72]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 0.18, 1.22]} castShadow>
       <boxGeometry args={[1.2, 0.08, 0.46]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -333,7 +378,7 @@ const DronePrefab = ({
     ].map((position) => (
       <mesh key={position.join('-')} position={position as Vec3} rotation={[0, 0, Math.PI / 4]}>
         <boxGeometry args={[0.5, 0.03, 0.5]} />
-        <EdgeMaterial />
+        <EdgeMaterial color={color} selected={selected} />
       </mesh>
     ))}
   </group>
@@ -353,11 +398,11 @@ const HelicopterPrefab = ({
     </mesh>
     <mesh position={[0, 0.62, 1.25]} castShadow>
       <boxGeometry args={[0.18, 0.16, 1.2]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 0.92, -0.15]} castShadow>
       <boxGeometry args={[2.4, 0.04, 0.18]} />
-      <meshStandardMaterial color="#1d232b" roughness={0.75} />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -370,13 +415,13 @@ const BoatPrefab = ({
   selected: boolean
 }) => (
   <group>
-    <mesh position={[0, 0.32, 0]} castShadow receiveShadow>
+    <mesh position={[0, 0.32, 0]} castShadow>
       <boxGeometry args={[1.3, 0.46, 2.8]} />
       <MatteMaterial color={color} selected={selected} />
     </mesh>
     <mesh position={[0, 0.74, -0.25]} castShadow>
       <boxGeometry args={[0.75, 0.45, 0.9]} />
-      <EdgeMaterial />
+      <EdgeMaterial color={color} selected={selected} />
     </mesh>
   </group>
 )
@@ -385,7 +430,7 @@ const TexturedGreenScreen = ({ textureUrl }: { textureUrl: string }) => {
   const texture = useLoader(TextureLoader, textureUrl)
 
   return (
-    <mesh position={[0, 1.125, 0]} castShadow receiveShadow>
+    <mesh position={[0, 1.125, 0]} castShadow>
       <boxGeometry args={[4, 2.25, 0.08]} />
       <meshStandardMaterial
         map={texture}
@@ -409,7 +454,7 @@ const GreenScreenPrefab = ({
     {textureUrl ? (
       <TexturedGreenScreen textureUrl={textureUrl} />
     ) : (
-      <mesh position={[0, 1.125, 0]} castShadow receiveShadow>
+      <mesh position={[0, 1.125, 0]} castShadow>
         <boxGeometry args={[4, 2.25, 0.08]} />
         <meshStandardMaterial
           color="#00b140"
@@ -454,7 +499,7 @@ const normalizeImportedObject = (object: Object3D): Object3D => {
       return
     }
     maybeMesh.castShadow = true
-    maybeMesh.receiveShadow = true
+    maybeMesh.receiveShadow = false
     if (!maybeMesh.material) {
       maybeMesh.material = new MeshStandardMaterial({
         color: whiteboxColor,
@@ -642,6 +687,10 @@ const DirectionalSceneLight = ({
         intensity={intensity}
         position={position}
         castShadow
+        shadow-bias={stableShadowBias}
+        shadow-normalBias={stableShadowNormalBias}
+        shadow-mapSize-width={stableShadowMapSize}
+        shadow-mapSize-height={stableShadowMapSize}
       />
     </>
   )
@@ -679,6 +728,10 @@ const SpotSceneLight = ({
         angle={Math.PI / 5}
         penumbra={0.55}
         castShadow
+        shadow-bias={stableShadowBias}
+        shadow-normalBias={stableShadowNormalBias}
+        shadow-mapSize-width={stableShadowMapSize}
+        shadow-mapSize-height={stableShadowMapSize}
       />
     </>
   )
@@ -714,6 +767,10 @@ export const SceneLights = ({ scene }: { scene: SceneDocument }) => {
                   position={position}
                   distance={light.distance * 3}
                   castShadow
+                  shadow-bias={stableShadowBias}
+                  shadow-normalBias={stableShadowNormalBias}
+                  shadow-mapSize-width={stableShadowMapSize}
+                  shadow-mapSize-height={stableShadowMapSize}
                 />
               )
             case 'spot':
@@ -750,8 +807,8 @@ export const CameraPath = ({
 }: SceneGeometryProps) => {
   const activeCamera = getActiveCamera(scene)
   const keyframes = sortKeyframes(activeCamera?.keyframes ?? [])
+  const segments = getCameraSegments(scene)
   const sampled = sampleCameraAtTime(scene, currentTimeSec)
-  const points = keyframes.map((keyframe) => keyframe.position)
   const aimVector: Vec3 = [
     sampled.target[0] - sampled.position[0],
     sampled.target[1] - sampled.position[1],
@@ -760,9 +817,16 @@ export const CameraPath = ({
 
   return (
     <>
-      {showCameraPath && points.length > 1 ? (
-        <Line points={points} color="#24b47e" lineWidth={2.4} />
-      ) : null}
+      {showCameraPath
+        ? segments.map((segment) => (
+            <Line
+              key={`camera-path-${segment.from.id}`}
+              points={sampleSegmentPoints(segment.from, segment.to, 32)}
+              color="#24b47e"
+              lineWidth={2.4}
+            />
+          ))
+        : null}
       {showCameraPath
         ? keyframes.map((keyframe) => (
             <mesh key={keyframe.id} position={keyframe.position}>

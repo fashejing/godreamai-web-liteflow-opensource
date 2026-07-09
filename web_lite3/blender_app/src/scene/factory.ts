@@ -63,6 +63,7 @@ export const createCameraKeyframe = (
   shotDurationSec: 2,
   speedToNext: 1,
   speedCurveToNext: 'linear',
+  connectToNext: true,
   curveToNext: 'smooth',
   curveStrengthToNext: 1,
 })

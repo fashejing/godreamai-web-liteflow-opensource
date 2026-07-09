@@ -6,7 +6,7 @@ from typing import Any
 
 import requests
 
-from web_lite3.constants import APP_DISPLAY_NAME, IMAGE_MODELS, VIDEO_MODELS
+from web_lite3.constants import HTTP_USER_AGENT, IMAGE_MODELS, VIDEO_MODELS
 from web_lite3.network import ProviderNetworkManager
 from web_lite3.schemas import ImageGenerateRequest, VideoGenerateRequest
 from web_lite3.volcengine import VolcengineGatewayError
@@ -245,7 +245,7 @@ class KlingGatewayBase:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"{APP_DISPLAY_NAME}/0.1",
+            "User-Agent": HTTP_USER_AGENT,
         }
 
     @staticmethod

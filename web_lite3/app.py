@@ -11,13 +11,14 @@ import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageDraw, ImageOps, UnidentifiedImageError
@@ -441,12 +442,6 @@ def create_app(
         if width <= 0 or height <= 0:
             return {}
         return {"width": int(width), "height": int(height)}
-
-    def _mask_api_key(value: str) -> str:
-        normalized = str(value or "").strip()
-        if len(normalized) <= 8:
-            return normalized
-        return f"{normalized[:3]}****{normalized[-4:]}"
 
     def _classify_image_mode(params_requested: dict[str, Any]) -> tuple[str, str]:
         model_variant = str(params_requested.get("model_variant") or "").strip()
@@ -2201,16 +2196,6 @@ def create_app(
             "available_themes": THEME_OPTIONS,
             "record_card_sizes": RECORD_CARD_SIZE_OPTIONS,
             "network_status": _network_status_payload(settings),
-            "masked_api_key_history": {
-                "volcengine": [
-                    {"value": item, "label": _mask_api_key(item)}
-                    for item in settings.volcengine_api_key_history or []
-                ],
-                "kling": [
-                    {"value": item, "label": _mask_api_key(item)}
-                    for item in settings.kling_api_key_history or []
-                ],
-            },
         }
 
     def _library_page_config() -> dict:
@@ -2286,8 +2271,25 @@ def create_app(
         ".3ds": "3ds",
     }
     blender_supported_blend_suffix = ".blend"
-    blender_supported_upload_suffixes = {*blender_supported_model_formats.keys(), blender_supported_blend_suffix}
-    blender_supported_model_label = "GLB, GLTF, OBJ, STL, FBX, DAE, PLY, 3MF, 3DS and BLEND"
+    blender_supported_zip_suffix = ".zip"
+    blender_supported_upload_suffixes = {
+        *blender_supported_model_formats.keys(),
+        blender_supported_blend_suffix,
+        blender_supported_zip_suffix,
+    }
+    blender_supported_model_label = "GLB、GLTF、OBJ、STL、FBX、DAE、PLY、3MF、3DS、BLEND、ZIP"
+    blender_package_model_priority = [
+        ".glb",
+        ".gltf",
+        ".obj",
+        ".fbx",
+        ".dae",
+        ".stl",
+        ".ply",
+        ".3mf",
+        ".3ds",
+        blender_supported_blend_suffix,
+    ]
     blender_supported_texture_formats = {".png", ".jpg", ".jpeg", ".webp"}
     blender_supported_texture_label = "PNG, JPG, JPEG and WebP"
 
@@ -2361,14 +2363,24 @@ def create_app(
         finally:
             script_path.unlink(missing_ok=True)
 
-    def _blender_imported_asset(path: Path) -> dict[str, Any]:
-        label = _blender_safe_name(path.name, "Imported")
+    def _blender_upload_url(imports_dir: Path, path: Path) -> str:
+        relative = path.relative_to(imports_dir).as_posix()
+        return f"/uploads/{relative}"
+
+    def _blender_imported_asset(
+        path: Path,
+        imports_dir: Path | None = None,
+        label_name: str | None = None,
+    ) -> dict[str, Any]:
+        if imports_dir is None:
+            _, imports_dir, _, _, _ = _blender_roots()
+        label = _blender_safe_name(label_name or path.name, "Imported")
         return {
             "id": f"import-{label}",
             "label": label,
             "category": "prop",
             "kind": "imported",
-            "url": f"/uploads/{path.name}",
+            "url": _blender_upload_url(imports_dir, path),
             "format": blender_supported_model_formats.get(path.suffix.lower()),
             "dimensions": [1, 1, 1],
         }
@@ -2376,11 +2388,102 @@ def create_app(
     def _blender_assets() -> list[dict[str, Any]]:
         _, imports_dir, _, _, _ = _blender_roots()
         imported = [
-            _blender_imported_asset(path)
-            for path in sorted(imports_dir.iterdir())
+            _blender_imported_asset(path, imports_dir)
+            for path in sorted(imports_dir.rglob("*"))
             if path.is_file() and path.suffix.lower() in blender_supported_model_formats
         ]
         return [*blender_builtin_assets, *imported]
+
+    def _blender_import_delete_target(asset: dict[str, Any], imports_dir: Path) -> Path | None:
+        upload_path = urlsplit(str(asset.get("url") or "")).path
+        if not upload_path.startswith("/uploads/"):
+            return None
+        relative_path = unquote(upload_path.removeprefix("/uploads/"))
+        parts = [part for part in Path(relative_path).parts if part and part != "."]
+        if not parts or any(part == ".." for part in parts):
+            return None
+        target_relative = Path(parts[0]) if len(parts) > 1 else Path(*parts)
+        target = (imports_dir / target_relative).resolve()
+        imports_root = imports_dir.resolve()
+        if target != imports_root and imports_root in target.parents:
+            return target
+        return None
+
+    def _blender_safe_zip_member_path(name: str) -> Path | None:
+        normalized = str(name or "").replace("\\", "/")
+        if not normalized or normalized.startswith("/") or "\x00" in normalized:
+            return None
+        parts = [part for part in normalized.split("/") if part and part != "."]
+        if not parts or any(part == ".." for part in parts):
+            return None
+        if parts[0] == "__MACOSX" or Path(parts[-1]).name.startswith("."):
+            return None
+        return Path(*parts)
+
+    def _find_blender_package_model(package_dir: Path) -> Path | None:
+        candidates = [
+            path
+            for path in package_dir.rglob("*")
+            if path.is_file()
+            and path.suffix.lower()
+            in {*blender_supported_model_formats.keys(), blender_supported_blend_suffix}
+        ]
+        if not candidates:
+            return None
+
+        def rank(path: Path) -> tuple[int, int, str]:
+            suffix = path.suffix.lower()
+            try:
+                priority = blender_package_model_priority.index(suffix)
+            except ValueError:
+                priority = len(blender_package_model_priority)
+            return (priority, len(path.relative_to(package_dir).parts), path.name.lower())
+
+        return sorted(candidates, key=rank)[0]
+
+    def _extract_blender_model_package(zip_path: Path, imports_dir: Path) -> Path:
+        package_dir = imports_dir / zip_path.stem
+        shutil.rmtree(package_dir, ignore_errors=True)
+        package_dir.mkdir(parents=True, exist_ok=True)
+        total_uncompressed = 0
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                for member in archive.infolist():
+                    if member.is_dir():
+                        continue
+                    relative_path = _blender_safe_zip_member_path(member.filename)
+                    if relative_path is None:
+                        continue
+                    total_uncompressed += member.file_size
+                    if total_uncompressed > 300 * 1024 * 1024:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="ZIP 资产包解压后超过 300MB，请改用低分辨率或单个 GLB/GLTF 文件。",
+                        )
+                    target_path = (package_dir / relative_path).resolve()
+                    package_root = package_dir.resolve()
+                    if package_root != target_path and package_root not in target_path.parents:
+                        continue
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(member) as source, target_path.open("wb") as target:
+                        shutil.copyfileobj(source, target)
+        except zipfile.BadZipFile as exc:
+            shutil.rmtree(package_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="ZIP 资产包无法读取，请确认文件未损坏。") from exc
+
+        main_model = _find_blender_package_model(package_dir)
+        if main_model is None:
+            shutil.rmtree(package_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=400,
+                detail="ZIP 资产包中未找到可导入模型文件。请包含 GLB/GLTF/OBJ/FBX/DAE/STL/PLY/3MF/3DS 或 BLEND。",
+            )
+        if main_model.suffix.lower() == blender_supported_blend_suffix:
+            glb_path = main_model.with_suffix(".glb")
+            _convert_blend_to_glb(main_model, glb_path)
+            main_model.unlink(missing_ok=True)
+            main_model = glb_path
+        return main_model
 
     def _resolve_blender_file(root: Path, relative_path: str) -> Path:
         candidate = (root / unquote(relative_path)).resolve()
@@ -5081,7 +5184,7 @@ def create_app(
         if suffix not in blender_supported_upload_suffixes:
             raise HTTPException(
                 status_code=400,
-                detail=f"Only {blender_supported_model_label} files can be imported.",
+                detail=f"仅支持导入 {blender_supported_model_label} 文件。Poly Haven 这类贴图资产包建议上传 ZIP，保留 .bin 和 textures 目录。",
             )
         _, imports_dir, _, _, _ = _blender_roots()
         safe_stem = _blender_safe_name(asset.filename or "asset", "asset")
@@ -5089,6 +5192,12 @@ def create_app(
         target_path = imports_dir / filename
         with target_path.open("wb") as handle:
             shutil.copyfileobj(asset.file, handle)
+        if suffix == blender_supported_zip_suffix:
+            try:
+                model_path = _extract_blender_model_package(target_path, imports_dir)
+            finally:
+                target_path.unlink(missing_ok=True)
+            return _blender_imported_asset(model_path, imports_dir, asset.filename)
         if suffix == blender_supported_blend_suffix:
             glb_path = target_path.with_suffix(".glb")
             try:
@@ -5097,6 +5206,29 @@ def create_app(
                 target_path.unlink(missing_ok=True)
             return _blender_imported_asset(glb_path)
         return _blender_imported_asset(target_path)
+
+    @app.delete("/api/assets/{asset_id}", status_code=204)
+    async def api_blender_delete_asset(asset_id: str) -> Response:
+        _, imports_dir, _, _, _ = _blender_roots()
+        asset = next(
+            (
+                item
+                for item in _blender_assets()
+                if item.get("id") == asset_id and item.get("kind") == "imported"
+            ),
+            None,
+        )
+        if asset is None:
+            raise HTTPException(status_code=404, detail="导入模型不存在")
+
+        target = _blender_import_delete_target(asset, imports_dir)
+        if target is None:
+            raise HTTPException(status_code=404, detail="导入模型不存在")
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            target.unlink(missing_ok=True)
+        return Response(status_code=204)
 
     @app.post("/api/textures/import")
     async def api_blender_import_texture(texture: UploadFile = File(...)) -> dict[str, Any]:

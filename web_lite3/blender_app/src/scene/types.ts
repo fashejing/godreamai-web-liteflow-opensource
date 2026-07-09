@@ -110,6 +110,7 @@ export type CameraKeyframe = {
   shotDurationSec?: number
   speedToNext?: number
   speedCurveToNext?: SpeedCurveType
+  connectToNext?: boolean
   curveToNext?: CameraCurveType
   curveStrengthToNext?: number
   curveControlToNext?: Vec3
@@ -185,7 +186,17 @@ export type RenderSettings = {
   format: 'mp4'
   fillWhiteGround: boolean
   hideGrid: boolean
+  floorMaterial: FloorMaterial
 }
+
+export type FloorMaterial =
+  | 'studio'
+  | 'white'
+  | 'checker'
+  | 'concrete'
+  | 'sand'
+  | 'grass'
+  | 'asphalt'
 
 export type SceneDocument = {
   version: 1
@@ -222,6 +233,7 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   format: 'mp4',
   fillWhiteGround: false,
   hideGrid: false,
+  floorMaterial: 'studio',
 }
 
 export const DEFAULT_TRANSFORM: Transform = {
