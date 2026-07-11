@@ -20,21 +20,21 @@ def test_release_version_prefers_explicit_packaging_env():
     assert (
         release_version_from_env(
             {
-                "GODREAMAI_RELEASE_VERSION": "v13.16-blender-Dual",
-                "GITHUB_REF_NAME": "v13.15-blender-Dual",
+                "GODREAMAI_RELEASE_VERSION": "v13.19-blender-opensource-Dual",
+                "GITHUB_REF_NAME": "v13.18-blender-opensource-Dual",
             }
         )
-        == "v13.16-blender-Dual"
+        == "v13.19-blender-opensource-Dual"
     )
 
 
 def test_release_version_uses_github_ref_name():
-    assert release_version_from_env({"GITHUB_REF_NAME": "v13.16-blender-Dual"}) == "v13.16-blender-Dual"
+    assert release_version_from_env({"GITHUB_REF_NAME": "v13.19-blender-opensource-Dual"}) == "v13.19-blender-opensource-Dual"
 
 
 def test_display_release_version_hides_internal_suffixes():
-    assert display_release_version("v13.16-ui-check") == "v13.16"
-    assert display_release_version("v13.16-blender-Dual") == "v13.16"
+    assert display_release_version("v13.19-ui-check") == "v13.19"
+    assert display_release_version("v13.19-blender-opensource-Dual") == "v13.19"
 
 
 def test_http_user_agents_are_ascii_header_safe():
@@ -50,12 +50,14 @@ def test_launcher_surfaces_callable_model_list():
         "井鸽启动器",
         "AI视频创作套件",
         "可调用模型",
+        "Seedream 5.0 Pro",
         "Seedream 5.0 Lite",
         "Seedream 4.5",
         "Kling Image 3.0",
         "Kling Image 3.0 Omni",
         "Seedance 2.0",
         "Seedance 2.0 Fast",
+        "Seedance 2.0 Mini",
         "Kling 3.0 Turbo",
         "Kling 3.0 Omni",
     ]

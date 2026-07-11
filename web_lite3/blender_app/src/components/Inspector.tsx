@@ -36,7 +36,8 @@ import {
   reverseObjectMotion,
   reverseObjectMotionFacing,
 } from '../scene/objectMotion'
-import { speedCurveOptions } from '../scene/speedCurves'
+import { cameraSpeedCurveOptions, speedCurveOptions } from '../scene/speedCurves'
+import { SpeedCurveEditor } from './SpeedCurveEditor'
 import type {
   CameraMotionMode,
   CameraMotionSettings,
@@ -50,7 +51,9 @@ import type {
   SceneLight,
   SceneObject,
   ShotCapture,
+  SpeedCurveInterpolation,
   SpeedCurveType,
+  SpeedCurvePoint,
   Transform,
   Vec3,
   VirtualProductionSettings,
@@ -99,6 +102,14 @@ type InspectorProps = {
   onUpdateSegmentSpeedCurve: (
     fromKeyframeId: string,
     speedCurveToNext: SpeedCurveType,
+  ) => void
+  onUpdateSegmentSpeedCurvePoints: (
+    fromKeyframeId: string,
+    points: SpeedCurvePoint[],
+  ) => void
+  onUpdateSegmentSpeedCurveInterpolation: (
+    fromKeyframeId: string,
+    interpolation: SpeedCurveInterpolation,
   ) => void
   onUpdateSegmentCurve: (fromKeyframeId: string, curveToNext: CameraCurveType) => void
   onUpdateSegmentCurveStrength: (
@@ -655,6 +666,8 @@ export const Inspector = ({
   onMoveCurveControl,
   onUpdateSegmentSpeed,
   onUpdateSegmentSpeedCurve,
+  onUpdateSegmentSpeedCurvePoints,
+  onUpdateSegmentSpeedCurveInterpolation,
   onUpdateSegmentCurve,
   onUpdateSegmentCurveStrength,
   onUpdateKeyframeShotDuration,
@@ -694,6 +707,9 @@ export const Inspector = ({
     : null
   const [draggedKeyframeId, setDraggedKeyframeId] = useState<string | null>(null)
   const [dragOverKeyframeId, setDragOverKeyframeId] = useState<string | null>(null)
+  const [editingSpeedCurveId, setEditingSpeedCurveId] = useState<string | null>(
+    null,
+  )
   const panoramaInputRef = useRef<HTMLInputElement | null>(null)
 
   const updateKeyframePositionAxis = (axisIndex: number, value: number) => {
@@ -1193,24 +1209,36 @@ export const Inspector = ({
                     />
                     <strong>{segment.speed.toFixed(2)}x</strong>
                   </label>
-                  <label className="compact-field">
-                    <span>速率曲线</span>
-                    <select
-                      value={segment.speedCurve}
-                      onChange={(event) =>
-                        onUpdateSegmentSpeedCurve(
-                          segment.from.id,
-                          event.target.value as SpeedCurveType,
-                        )
-                      }
-                    >
-                      {speedCurveOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="speed-curve-control">
+                    <label className="compact-field">
+                      <span>速率曲线</span>
+                      <select
+                        value={segment.speedCurve}
+                        onChange={(event) => {
+                          const nextCurve = event.target.value as SpeedCurveType
+                          onUpdateSegmentSpeedCurve(segment.from.id, nextCurve)
+                          if (nextCurve === 'custom') {
+                            setEditingSpeedCurveId(segment.from.id)
+                          }
+                        }}
+                      >
+                        {cameraSpeedCurveOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {segment.speedCurve === 'custom' ? (
+                      <button
+                        className="speed-curve-edit-button"
+                        onClick={() => setEditingSpeedCurveId(segment.from.id)}
+                        type="button"
+                      >
+                        编辑曲线
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ))
             : fixedShotSegments.map((segment) => (
@@ -1491,6 +1519,30 @@ export const Inspector = ({
           </div>
         ) : null}
       </CollapsibleSection>
+      {editingSpeedCurveId ? (
+        (() => {
+          const segment = segments.find(
+            (candidate) => candidate.from.id === editingSpeedCurveId,
+          )
+          return segment ? (
+            <SpeedCurveEditor
+              interpolation={segment.speedCurveInterpolation}
+              segmentLabel={`轨迹 ${segment.index + 1}: 点 ${segment.index + 1} 到点 ${segment.index + 2}`}
+              points={segment.speedCurvePoints}
+              onChange={(points) =>
+                onUpdateSegmentSpeedCurvePoints(segment.from.id, points)
+              }
+              onInterpolationChange={(interpolation) =>
+                onUpdateSegmentSpeedCurveInterpolation(
+                  segment.from.id,
+                  interpolation,
+                )
+              }
+              onClose={() => setEditingSpeedCurveId(null)}
+            />
+          ) : null
+        })()
+      ) : null}
     </aside>
   )
 }

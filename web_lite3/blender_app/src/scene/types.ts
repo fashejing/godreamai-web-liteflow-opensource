@@ -110,6 +110,8 @@ export type CameraKeyframe = {
   shotDurationSec?: number
   speedToNext?: number
   speedCurveToNext?: SpeedCurveType
+  speedCurvePointsToNext?: SpeedCurvePoint[]
+  speedCurveInterpolationToNext?: SpeedCurveInterpolation
   connectToNext?: boolean
   curveToNext?: CameraCurveType
   curveStrengthToNext?: number
@@ -124,6 +126,14 @@ export type SpeedCurveType =
   | 'ease-in-out'
   | 'strong-ease-in'
   | 'strong-ease-out'
+  | 'custom'
+
+export type SpeedCurvePoint = {
+  time: number
+  rate: number
+}
+
+export type SpeedCurveInterpolation = 'linear' | 'smooth'
 
 export type CameraCurveType =
   | 'linear'

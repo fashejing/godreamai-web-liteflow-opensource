@@ -30,6 +30,7 @@ const speedCurveValueSchema = z.union([
   z.literal('ease-in-out'),
   z.literal('strong-ease-in'),
   z.literal('strong-ease-out'),
+  z.literal('custom'),
 ])
 
 const speedCurveSchema = speedCurveValueSchema.default('linear')
@@ -104,6 +105,19 @@ const cameraKeyframeSchema = z.object({
   shotDurationSec: z.number().min(0.5).max(30).optional(),
   speedToNext: z.number().min(0.25).max(3).optional(),
   speedCurveToNext: speedCurveValueSchema.optional(),
+  speedCurvePointsToNext: z
+    .array(
+      z.object({
+        time: z.number().min(0).max(1),
+        rate: z.number().min(0).max(3),
+      }),
+    )
+    .min(2)
+    .max(16)
+    .optional(),
+  speedCurveInterpolationToNext: z
+    .union([z.literal('linear'), z.literal('smooth')])
+    .optional(),
   connectToNext: z.boolean().optional(),
   curveToNext: z
     .union([
@@ -124,7 +138,7 @@ const cameraKeyframeSchema = z.object({
 const virtualCameraSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  keyframes: z.array(cameraKeyframeSchema).min(1),
+  keyframes: z.array(cameraKeyframeSchema),
 })
 
 const cameraAimAnchorSchema = z.object({

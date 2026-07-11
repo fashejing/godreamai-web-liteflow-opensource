@@ -12,6 +12,40 @@ const markerScalePerMeter = 0.18
 const minMarkerScale = 0.22
 const maxMarkerScale = 1
 
+export type ContainedAspectSize = {
+  width: number
+  height: number
+}
+
+export const getContainedAspectSize = (
+  containerWidth: number,
+  containerHeight: number,
+  aspect: number,
+  inset = 0,
+): ContainedAspectSize => {
+  const availableWidth = Math.max(0, containerWidth - inset * 2)
+  const availableHeight = Math.max(0, containerHeight - inset * 2)
+  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9
+
+  if (availableWidth === 0 || availableHeight === 0) {
+    return { width: 0, height: 0 }
+  }
+
+  const widthFromHeight = availableHeight * safeAspect
+
+  if (widthFromHeight <= availableWidth) {
+    return {
+      width: widthFromHeight,
+      height: availableHeight,
+    }
+  }
+
+  return {
+    width: availableWidth,
+    height: availableWidth / safeAspect,
+  }
+}
+
 export const getAdaptiveMarkerScale = (distance: number): number =>
   Math.min(maxMarkerScale, Math.max(minMarkerScale, distance * markerScalePerMeter))
 

@@ -64,9 +64,43 @@ export const createCameraKeyframe = (
   shotDurationSec: 2,
   speedToNext: 1,
   speedCurveToNext: 'linear',
+  speedCurveInterpolationToNext: 'linear',
   connectToNext: true,
   curveToNext: 'smooth',
   curveStrengthToNext: 1,
+})
+
+export const createEmptyScene = (): SceneDocument => ({
+  version: 1,
+  objects: [],
+  cameras: [
+    {
+      id: 'camera-main',
+      name: 'Shot Camera',
+      keyframes: [],
+    },
+  ],
+  activeCameraId: 'camera-main',
+  cameraAimAnchor: {
+    enabled: false,
+    position: [0, 1.3, 0],
+    snapEnabled: true,
+  },
+  cameraMotion: {
+    mode: 'stable',
+    shakeStrength: 0,
+  },
+  lights: defaultSceneLights.map((light) => ({ ...light })),
+  timeline: {
+    currentTimeSec: 0,
+    mode: 'motion',
+  },
+  renderSettings: {
+    ...DEFAULT_RENDER_SETTINGS,
+  },
+  virtualProduction: {
+    ...DEFAULT_VIRTUAL_PRODUCTION_SETTINGS,
+  },
 })
 
 export const createInitialScene = (): SceneDocument => {

@@ -670,6 +670,19 @@ button:disabled {
   height: 100%;
 }
 
+.monitor-guide-frame {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  border: 1px dashed rgba(231, 242, 243, 0.78);
+  box-shadow:
+    0 0 0 1px rgba(10, 13, 16, 0.3),
+    inset 0 0 0 1px rgba(10, 13, 16, 0.2);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
 .viewport-shell.is-space-panning .viewport-canvas {
   cursor: grab;
 }
@@ -887,14 +900,22 @@ button:disabled {
   font-weight: 800;
 }
 
-.shot-monitor-frame {
+.shot-monitor-body {
   flex: 1;
   min-height: 0;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   border: 1px solid var(--soft-border);
   border-radius: 6px;
   background: #000000;
-  aspect-ratio: auto !important;
+}
+
+.shot-monitor-frame {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #000000;
 }
 
 .shot-monitor-canvas {
@@ -1571,6 +1592,270 @@ button:disabled {
   font-weight: 700;
 }
 
+.speed-curve-control {
+  display: grid;
+  gap: 6px;
+}
+
+.speed-curve-edit-button {
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 55%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-2) 10%, var(--surface-2));
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.speed-curve-edit-button:hover {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 18%, var(--surface-2));
+}
+
+.speed-curve-overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 62%);
+}
+
+.speed-curve-dialog {
+  width: min(640px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 48%, var(--border));
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 48%);
+}
+
+.speed-curve-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.speed-curve-dialog-header > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.speed-curve-dialog-header strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.speed-curve-dialog-header span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speed-curve-dialog-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.speed-curve-dialog-actions button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.speed-curve-dialog-actions button:hover:not(:disabled) {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--surface-2));
+}
+
+.speed-curve-dialog-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.speed-curve-modebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.speed-curve-modebar > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.speed-curve-modebar > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.speed-curve-modebar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 112px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.speed-curve-modebar button:hover:not(.is-active) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.speed-curve-modebar button.is-active {
+  border-color: color-mix(in srgb, var(--accent-2) 58%, var(--border));
+  background: color-mix(in srgb, var(--accent-2) 15%, var(--surface-2));
+  color: var(--text);
+}
+
+.speed-curve-chart {
+  padding: 14px 16px 6px;
+  background: color-mix(in srgb, var(--surface-2) 84%, #071015);
+}
+
+.speed-curve-chart svg {
+  display: block;
+  width: 100%;
+  max-height: min(48vh, 360px);
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+}
+
+.speed-curve-grid-line {
+  stroke: color-mix(in srgb, var(--muted) 38%, transparent);
+  stroke-width: 1;
+}
+
+.speed-curve-axis {
+  fill: var(--text);
+  stroke: var(--text);
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.speed-curve-axis path {
+  stroke: none;
+}
+
+.speed-curve-axis-label,
+.speed-curve-axis-title {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.speed-curve-axis-title {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+.speed-curve-line {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.speed-curve-node {
+  fill: var(--panel);
+  stroke: var(--accent-2);
+  stroke-width: 3;
+  cursor: grab;
+}
+
+.speed-curve-node:active {
+  cursor: grabbing;
+}
+
+.speed-curve-node.is-selected {
+  fill: var(--accent);
+  stroke: #ffffff;
+}
+
+.speed-curve-readout {
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.speed-curve-readout strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.speed-curve-readout span:last-child {
+  text-align: right;
+}
+
+@media (max-width: 620px) {
+  .speed-curve-overlay {
+    padding: 8px;
+  }
+
+  .speed-curve-readout {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .speed-curve-modebar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .speed-curve-modebar button {
+    min-width: 0;
+  }
+
+  .speed-curve-readout span:last-child {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
 .wide-field {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);
@@ -2085,9 +2370,41 @@ button:disabled {
   cursor: pointer;
 }
 
+.keyframe-dot.is-draggable {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.keyframe-dot.is-dragging {
+  z-index: 3;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.keyframe-dot.is-locked {
+  cursor: pointer;
+}
+
 .keyframe-dot.is-selected {
   background: var(--accent);
   transform: rotate(45deg) scale(1.25);
+}
+
+.keyframe-drag-time {
+  position: absolute;
+  top: -22px;
+  z-index: 5;
+  min-width: 42px;
+  padding: 3px 5px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .shot-duration-block {

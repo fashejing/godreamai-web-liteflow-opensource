@@ -26,6 +26,7 @@ import {
 import {
   clampTimeToDuration,
   connectCameraKeyframes,
+  constrainCameraKeyframeTime,
   getFrameCount,
   getNextCameraKeyframeTime,
   getTimelineDuration,
@@ -40,7 +41,7 @@ import {
 } from './scene/camera'
 import {
   createCameraKeyframe,
-  createInitialScene,
+  createEmptyScene,
   createObjectFromAsset,
 } from './scene/factory'
 import {
@@ -75,7 +76,9 @@ import type {
   SceneLight,
   SceneObject,
   ShotCapture,
+  SpeedCurveInterpolation,
   SpeedCurveType,
+  SpeedCurvePoint,
   TimelineMode,
   Transform,
   Vec3,
@@ -511,6 +514,9 @@ const cloneKeyframes = (keyframes: CameraKeyframe[]): CameraKeyframe[] =>
     curveControlInToNext: keyframe.curveControlInToNext
       ? [...keyframe.curveControlInToNext]
       : undefined,
+    speedCurvePointsToNext: keyframe.speedCurvePointsToNext?.map((point) => ({
+      ...point,
+    })),
   }))
 
 const defaultAimAnchor: CameraAimAnchor = {
@@ -520,7 +526,7 @@ const defaultAimAnchor: CameraAimAnchor = {
 }
 
 const defaultViewportVisibility: ViewportVisibility = {
-  lights: true,
+  lights: false,
   cameraPath: true,
   objectPaths: true,
   floor: true,
@@ -549,12 +555,12 @@ const resolveSceneUpdate = (
 
 function App() {
   const [assets, setAssets] = useState<AssetDefinition[]>(builtInAssets)
-  const [scene, setScene] = useState<SceneDocument>(() => createInitialScene())
+  const [scene, setScene] = useState<SceneDocument>(() => createEmptyScene())
   const sceneRef = useRef(scene)
   const sceneHistoryRef = useRef<SceneDocument[]>([])
   const [undoDepth, setUndoDepth] = useState(0)
   const [selectedAssetId, setSelectedAssetId] = useState(builtInAssets[0].id)
-  const [selectedObjectId, setSelectedObjectId] = useState<string | null>('person-scale')
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const [transformMode, setTransformMode] = useState<TransformMode>('translate')
   const [panelTheme, setPanelTheme] = useState<UiTheme>('dark')
   const [spaceTheme, setSpaceTheme] = useState<UiTheme>('dark')
@@ -571,7 +577,7 @@ function App() {
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null)
   const [systemMessage, setSystemMessage] = useState('Ready')
   const [importing, setImporting] = useState(false)
-  const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>('kf-start')
+  const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>(null)
   const playStartRef = useRef<{ timestamp: number; timeSec: number } | null>(null)
   const viewportCameraRef = useRef<CameraSample | null>(null)
   const renderCaptureRef = useRef<RenderCaptureHandle | null>(null)
@@ -1275,6 +1281,74 @@ function App() {
     }))
   }
 
+  const updateCameraKeyframeTime = (
+    keyframeId: string,
+    requestedTimeSec: number,
+  ) => {
+    let updatedTimeSec = Number.NaN
+    let segmentDurationSec = Number.NaN
+
+    commitScene((current) => {
+      const activeCamera = current.cameras.find(
+        (camera) => camera.id === current.activeCameraId,
+      )
+      if (!activeCamera) {
+        return current
+      }
+
+      const sorted = sortKeyframes(activeCamera.keyframes)
+      const keyframeIndex = sorted.findIndex((keyframe) => keyframe.id === keyframeId)
+      const currentKeyframe = sorted[keyframeIndex]
+      const nextTimeSec = constrainCameraKeyframeTime(
+        sorted,
+        keyframeId,
+        requestedTimeSec,
+        current.renderSettings.durationSec,
+        current.renderSettings.fps,
+      )
+
+      if (
+        !currentKeyframe ||
+        nextTimeSec === null ||
+        Math.abs(currentKeyframe.timeSec - nextTimeSec) < 0.000001
+      ) {
+        return current
+      }
+
+      updatedTimeSec = nextTimeSec
+      segmentDurationSec = nextTimeSec - sorted[keyframeIndex - 1].timeSec
+
+      return {
+        ...current,
+        cameras: current.cameras.map((camera) =>
+          camera.id === current.activeCameraId
+            ? {
+                ...camera,
+                keyframes: camera.keyframes.map((keyframe) =>
+                  keyframe.id === keyframeId
+                    ? { ...keyframe, timeSec: nextTimeSec }
+                    : keyframe,
+                ),
+              }
+            : camera,
+        ),
+        timeline: {
+          ...current.timeline,
+          currentTimeSec: nextTimeSec,
+        },
+      }
+    })
+
+    if (Number.isFinite(updatedTimeSec) && Number.isFinite(segmentDurationSec)) {
+      setPlaying(false)
+      setSelectedKeyframeId(keyframeId)
+      setSelectedObjectId(null)
+      setSystemMessage(
+        `镜头点已移动到 ${updatedTimeSec.toFixed(2)}s，上一段运镜时长 ${segmentDurationSec.toFixed(2)}s`,
+      )
+    }
+  }
+
   const setTimelineMode = (mode: TimelineMode) => {
     commitScene((current) => ({
       ...current,
@@ -1831,6 +1905,57 @@ function App() {
       ),
     }))
     setSystemMessage('已调整该段运镜速率曲线')
+  }
+
+  const updateSegmentSpeedCurvePoints = (
+    fromKeyframeId: string,
+    speedCurvePointsToNext: SpeedCurvePoint[],
+  ) => {
+    commitScene((current) => ({
+      ...current,
+      cameras: current.cameras.map((camera) =>
+        camera.id === current.activeCameraId
+          ? {
+              ...camera,
+              keyframes: camera.keyframes.map((keyframe) =>
+                keyframe.id === fromKeyframeId
+                  ? {
+                      ...keyframe,
+                      speedCurveToNext: 'custom',
+                      speedCurvePointsToNext,
+                    }
+                  : keyframe,
+              ),
+            }
+          : camera,
+      ),
+    }))
+  }
+
+  const updateSegmentSpeedCurveInterpolation = (
+    fromKeyframeId: string,
+    speedCurveInterpolationToNext: SpeedCurveInterpolation,
+  ) => {
+    commitScene((current) => ({
+      ...current,
+      cameras: current.cameras.map((camera) =>
+        camera.id === current.activeCameraId
+          ? {
+              ...camera,
+              keyframes: camera.keyframes.map((keyframe) =>
+                keyframe.id === fromKeyframeId
+                  ? { ...keyframe, speedCurveInterpolationToNext }
+                  : keyframe,
+              ),
+            }
+          : camera,
+      ),
+    }))
+    setSystemMessage(
+      speedCurveInterpolationToNext === 'smooth'
+        ? '已将速率节点平滑成曲线'
+        : '已保持速率节点直线连接',
+    )
   }
 
   const updateSegmentCurve = (
@@ -2522,6 +2647,10 @@ function App() {
           onMoveCurveControl={moveCurveControl}
           onUpdateSegmentSpeed={updateSegmentSpeed}
           onUpdateSegmentSpeedCurve={updateSegmentSpeedCurve}
+          onUpdateSegmentSpeedCurvePoints={updateSegmentSpeedCurvePoints}
+          onUpdateSegmentSpeedCurveInterpolation={
+            updateSegmentSpeedCurveInterpolation
+          }
           onUpdateSegmentCurve={updateSegmentCurve}
           onUpdateSegmentCurveStrength={updateSegmentCurveStrength}
           onUpdateKeyframeShotDuration={updateKeyframeShotDuration}
@@ -2553,6 +2682,7 @@ function App() {
           setSelectedKeyframeId(keyframeId)
           setSelectedObjectId(null)
         }}
+        onKeyframeTimeChange={updateCameraKeyframeTime}
       />
 
       <div className="status-bar">

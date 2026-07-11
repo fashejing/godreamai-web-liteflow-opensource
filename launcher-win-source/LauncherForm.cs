@@ -19,8 +19,8 @@ internal sealed class LauncherForm : Form
             .InformationalVersion ?? "dev"
     );
     private const string LauncherModelSummary =
-        "生图：Seedream 5.0 Lite / Seedream 4.5 / Kling Image 3.0 / Kling Image 3.0 Omni\r\n" +
-        "生视频：Seedance 2.0 / Seedance 2.0 Fast / Kling 3.0 Turbo / Kling 3.0 Omni";
+        "生图：Seedream 5.0 Pro / Seedream 5.0 Lite / Seedream 4.5 / Kling Image 3.0 / Kling Image 3.0 Omni\r\n" +
+        "生视频：Seedance 2.0 / Seedance 2.0 Fast / Seedance 2.0 Mini / Kling 3.0 Turbo / Kling 3.0 Omni";
 
     private sealed record BackendResult(
         bool ok,

@@ -2359,7 +2359,10 @@ def create_app(
             )
             if completed.returncode != 0 or not target_path.exists():
                 detail = (completed.stderr or completed.stdout or "Blender 未生成 GLB 文件。").strip()
-                raise HTTPException(status_code=400, detail=f".blend 转换失败：{detail[-800:]}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f".blend 转换失败：Blender 转换进程错误：{detail[-800:]}",
+                )
         finally:
             script_path.unlink(missing_ok=True)
 

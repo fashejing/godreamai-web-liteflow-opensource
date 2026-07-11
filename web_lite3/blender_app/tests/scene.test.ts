@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import { app } from '../server/index'
 import {
+  constrainCameraKeyframeTime,
   connectCameraKeyframes,
   getCameraSegments,
   getFixedShotSegments,
@@ -16,7 +17,11 @@ import {
 } from '../src/scene/camera'
 import { builtInAssets } from '../src/scene/assets'
 import { cinematicMovePresets } from '../src/scene/cameraPresets'
-import { createInitialScene, createObjectFromAsset } from '../src/scene/factory'
+import {
+  createEmptyScene,
+  createInitialScene,
+  createObjectFromAsset,
+} from '../src/scene/factory'
 import {
   objectMotionPresets,
   reverseObjectMotion,
@@ -31,7 +36,12 @@ import {
 } from '../src/scene/placement'
 import { normalizeRenderSettings, validateSceneDocument } from '../src/scene/validation'
 import {
+  applySpeedCurve,
+  sampleCustomSpeedCurveRate,
+} from '../src/scene/speedCurves'
+import {
   getAdaptiveMarkerScale,
+  getContainedAspectSize,
   getFrameDistanceForBounds,
   getSceneObjectBounds,
 } from '../src/scene/viewFrame'
@@ -138,6 +148,14 @@ afterAll(async () => {
 })
 
 describe('scene document schema', () => {
+  it('starts a new project without preset objects or camera points', () => {
+    const scene = createEmptyScene()
+
+    expect(validateSceneDocument(scene)).toEqual(scene)
+    expect(scene.objects).toEqual([])
+    expect(scene.cameras[0].keyframes).toEqual([])
+  })
+
   it('accepts the initial scene document', () => {
     const scene = createInitialScene()
 
@@ -215,6 +233,36 @@ describe('scene document schema', () => {
 
     expect(light.distance).toBe(50)
     expect(distance).toBeLessThanOrEqual(50)
+  })
+})
+
+describe('camera keyframe timeline dragging', () => {
+  it('locks the first point and keeps dragged points ordered on frame boundaries', () => {
+    const scene = createInitialScene()
+    const keyframes = scene.cameras[0].keyframes
+
+    expect(
+      constrainCameraKeyframeTime(keyframes, 'kf-start', 2, 10, 30),
+    ).toBeNull()
+    expect(
+      constrainCameraKeyframeTime(keyframes, 'kf-mid', 3.141, 10, 30),
+    ).toBeCloseTo(94 / 30, 5)
+    expect(
+      constrainCameraKeyframeTime(keyframes, 'kf-mid', 12, 10, 30),
+    ).toBeCloseTo(10 - 1 / 30, 5)
+  })
+})
+
+describe('monitor framing', () => {
+  it('contains wide and portrait output ratios without distortion', () => {
+    expect(getContainedAspectSize(400, 200, 32 / 9)).toEqual({
+      width: 400,
+      height: 112.5,
+    })
+    expect(getContainedAspectSize(400, 200, 9 / 16)).toEqual({
+      width: 112.5,
+      height: 200,
+    })
   })
 })
 
@@ -636,6 +684,87 @@ describe('camera timeline sampling', () => {
 
     expect(easedIn.position[2]).toBeCloseTo(2)
     expect(easedOut.position[2]).toBeCloseTo(6)
+  })
+
+  it('integrates custom camera speed points into normalized progress', () => {
+    expect(
+      applySpeedCurve(0.5, 'custom', [
+        { time: 0, rate: 2 },
+        { time: 1, rate: 2 },
+      ]),
+    ).toBeCloseTo(0.5)
+
+    expect(
+      applySpeedCurve(0.5, 'custom', [
+        { time: 0, rate: 3 },
+        { time: 0.5, rate: 3 },
+        { time: 1, rate: 0 },
+      ]),
+    ).toBeCloseTo(2 / 3)
+  })
+
+  it('smooths custom rate nodes without overshooting their valid range', () => {
+    const points = [
+      { time: 0, rate: 0 },
+      { time: 0.3, rate: 1 },
+      { time: 0.55, rate: 3 },
+      { time: 1, rate: 0.2 },
+    ]
+    const linearProgress = applySpeedCurve(0.4, 'custom', points, 'linear')
+    const smoothProgress = applySpeedCurve(0.4, 'custom', points, 'smooth')
+    const sampledRates = Array.from({ length: 101 }, (_, index) =>
+      sampleCustomSpeedCurveRate(index / 100, points, 'smooth'),
+    )
+
+    expect(smoothProgress).not.toBeCloseTo(linearProgress, 4)
+    expect(applySpeedCurve(1, 'custom', points, 'smooth')).toBe(1)
+    expect(sampledRates.every((rate) => rate >= 0 && rate <= 3)).toBe(true)
+  })
+
+  it('samples camera motion with a persisted custom rate graph', () => {
+    const scene = createInitialScene()
+    const [first, second] = scene.cameras[0].keyframes
+    scene.cameras[0].keyframes = [
+      {
+        ...first,
+        timeSec: 0,
+        position: [0, 1, 0] as Vec3,
+        target: [0, 1, 0] as Vec3,
+        speedToNext: 1,
+        speedCurveToNext: 'custom',
+        speedCurvePointsToNext: [
+          { time: 0, rate: 3 },
+          { time: 0.5, rate: 3 },
+          { time: 1, rate: 0 },
+        ],
+        speedCurveInterpolationToNext: 'smooth',
+        curveToNext: 'linear',
+      },
+      {
+        ...second,
+        timeSec: 4,
+        position: [0, 1, 9] as Vec3,
+        target: [0, 1, 0] as Vec3,
+      },
+    ]
+
+    const expectedProgress = applySpeedCurve(
+      0.5,
+      'custom',
+      scene.cameras[0].keyframes[0].speedCurvePointsToNext,
+      'smooth',
+    )
+    expect(sampleCameraAtTime(scene, 2).position[2]).toBeCloseTo(
+      expectedProgress * 9,
+    )
+    expect(
+      validateSceneDocument(scene).cameras[0].keyframes[0]
+        .speedCurvePointsToNext,
+    ).toEqual(scene.cameras[0].keyframes[0].speedCurvePointsToNext)
+    expect(
+      validateSceneDocument(scene).cameras[0].keyframes[0]
+        .speedCurveInterpolationToNext,
+    ).toBe('smooth')
   })
 
   it('adds deterministic camera shake for handheld and drone modes', () => {

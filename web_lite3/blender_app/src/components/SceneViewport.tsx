@@ -58,6 +58,7 @@ import {
   DEFAULT_VIEW_SIZE,
   VIEW_RESET_DIRECTION,
   getAdaptiveMarkerScale,
+  getContainedAspectSize,
   getFrameDistanceForBounds,
   getSceneObjectBounds,
 } from '../scene/viewFrame'
@@ -171,6 +172,44 @@ const isTextEditingTarget = (target: EventTarget | null): boolean => {
   }
 
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+type ElementSize = {
+  width: number
+  height: number
+}
+
+const useElementSize = <T extends HTMLElement>() => {
+  const [element, setElement] = useState<T | null>(null)
+  const [size, setSize] = useState<ElementSize>({ width: 0, height: 0 })
+  const ref = useCallback((node: T | null) => setElement(node), [])
+
+  useEffect(() => {
+    if (!element) {
+      return undefined
+    }
+
+    const updateSize = () => {
+      const nextSize = {
+        width: element.clientWidth,
+        height: element.clientHeight,
+      }
+
+      setSize((current) =>
+        current.width === nextSize.width && current.height === nextSize.height
+          ? current
+          : nextSize,
+      )
+    }
+
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [element])
+
+  return [ref, size] as const
 }
 
 const AdaptiveMarkerVisual = ({
@@ -621,16 +660,20 @@ const EditableCameraPath = ({
               gapSize={0.11}
             />
           ))}
-      <Line
-        points={[sampledCamera.position, sampledCamera.target]}
-        color="#ff5c7a"
-        lineWidth={2.6}
-      />
-      <DirectionCone
-        position={sampledCamera.position}
-        target={sampledCamera.target}
-        color="#172433"
-      />
+      {keyframes.length > 0 ? (
+        <>
+          <Line
+            points={[sampledCamera.position, sampledCamera.target]}
+            color="#ff5c7a"
+            lineWidth={2.6}
+          />
+          <DirectionCone
+            position={sampledCamera.position}
+            target={sampledCamera.target}
+            color="#172433"
+          />
+        </>
+      ) : null}
       {timelineMode === 'motion'
         ? segments.map((segment) => (
             <CurveControlMarker
@@ -1107,6 +1150,8 @@ export const SceneViewport = ({
   onUpdateLight,
 }: SceneViewportProps) => {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
+  const [viewportShellRef, viewportSize] = useElementSize<HTMLElement>()
+  const [monitorBodyRef, monitorBodySize] = useElementSize<HTMLDivElement>()
   const [viewChangeTick, setViewChangeTick] = useState(0)
   const [spacePanning, setSpacePanning] = useState(false)
   const [monitorFullscreen, setMonitorFullscreen] = useState(false)
@@ -1145,12 +1190,24 @@ export const SceneViewport = ({
   }, [])
   const colors = viewportTheme[uiTheme]
   const renderAspect = scene.renderSettings.width / scene.renderSettings.height
+  const monitorGuideSize = getContainedAspectSize(
+    viewportSize.width,
+    viewportSize.height,
+    renderAspect,
+    34,
+  )
+  const monitorFrameSize = getContainedAspectSize(
+    monitorBodySize.width,
+    monitorBodySize.height,
+    renderAspect,
+  )
   const visibleObjects = visibility.greenScreen
     ? scene.objects
     : scene.objects.filter((object) => getAssetById(assets, object.assetId)?.prefab !== 'greenscreen')
 
   return (
     <section
+      ref={viewportShellRef}
       className={`viewport-shell ${cameraView ? 'is-camera-view' : ''} ${spacePanning ? 'is-space-panning' : ''}`}
       aria-label="3D viewport"
     >
@@ -1267,6 +1324,16 @@ export const SceneViewport = ({
           />
         </Canvas>
       </div>
+      {monitorEnabled && !cameraView && monitorGuideSize.width > 0 ? (
+        <div
+          className="monitor-guide-frame"
+          style={{
+            width: monitorGuideSize.width,
+            height: monitorGuideSize.height,
+          }}
+          aria-hidden="true"
+        />
+      ) : null}
       {monitorEnabled && !fullscreenActive ? (
         <div className={`shot-monitor-panel ${monitorFullscreen ? 'is-fullscreen' : ''}`}>
           <div className="shot-monitor-header">
@@ -1290,19 +1357,23 @@ export const SceneViewport = ({
               </button>
             </div>
           </div>
-          <div
-            className="shot-monitor-frame"
-            style={{
-              aspectRatio: `${scene.renderSettings.width} / ${scene.renderSettings.height}`,
-            }}
-          >
-            <CameraMonitorViewport
-              scene={scene}
-              assets={assets}
-              currentTimeSec={currentTimeSec}
-              uiTheme={uiTheme}
-              showFloor={visibility.floor}
-            />
+          <div ref={monitorBodyRef} className="shot-monitor-body">
+            <div
+              className="shot-monitor-frame"
+              style={{
+                width: monitorFrameSize.width || '100%',
+                height: monitorFrameSize.height || '100%',
+                aspectRatio: `${scene.renderSettings.width} / ${scene.renderSettings.height}`,
+              }}
+            >
+              <CameraMonitorViewport
+                scene={scene}
+                assets={assets}
+                currentTimeSec={currentTimeSec}
+                uiTheme={uiTheme}
+                showFloor={visibility.floor}
+              />
+            </div>
           </div>
         </div>
       ) : null}

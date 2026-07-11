@@ -3,12 +3,19 @@ import type {
   CameraKeyframe,
   CameraMotionSettings,
   SceneDocument,
+  SpeedCurveInterpolation,
+  SpeedCurvePoint,
   SpeedCurveType,
   TimelineMode,
   Vec3,
 } from './types'
 import { sampleObjectMotionTransform } from './objectMotion'
-import { applySpeedCurve, normalizeSpeedCurve } from './speedCurves'
+import {
+  applySpeedCurve,
+  normalizeCustomSpeedCurvePoints,
+  normalizeSpeedCurveInterpolation,
+  normalizeSpeedCurve,
+} from './speedCurves'
 
 export type CameraSample = {
   position: Vec3
@@ -334,6 +341,57 @@ export const sortKeyframes = (
   keyframes: CameraKeyframe[],
 ): CameraKeyframe[] => [...keyframes].sort((a, b) => a.timeSec - b.timeSec)
 
+export type CameraKeyframeTimeBounds = {
+  minSec: number
+  maxSec: number
+}
+
+export const getCameraKeyframeTimeBounds = (
+  keyframes: CameraKeyframe[],
+  keyframeId: string,
+  durationSec: number,
+  fps: number,
+): CameraKeyframeTimeBounds | null => {
+  const sorted = sortKeyframes(keyframes)
+  const index = sorted.findIndex((keyframe) => keyframe.id === keyframeId)
+
+  if (index <= 0) {
+    return null
+  }
+
+  const frameStep = 1 / Math.max(1, fps)
+  const minSec = sorted[index - 1].timeSec + frameStep
+  const maxSec = sorted[index + 1]
+    ? sorted[index + 1].timeSec - frameStep
+    : durationSec
+
+  return maxSec >= minSec ? { minSec, maxSec } : null
+}
+
+export const constrainCameraKeyframeTime = (
+  keyframes: CameraKeyframe[],
+  keyframeId: string,
+  requestedTimeSec: number,
+  durationSec: number,
+  fps: number,
+): number | null => {
+  const bounds = getCameraKeyframeTimeBounds(
+    keyframes,
+    keyframeId,
+    durationSec,
+    fps,
+  )
+
+  if (!bounds || !Number.isFinite(requestedTimeSec)) {
+    return null
+  }
+
+  const frameStep = 1 / Math.max(1, fps)
+  const snapped = Math.round(requestedTimeSec / frameStep) * frameStep
+
+  return Number(clamp(snapped, bounds.minSec, bounds.maxSec).toFixed(6))
+}
+
 export const isCameraSegmentConnected = (keyframe: CameraKeyframe): boolean =>
   keyframe.connectToNext !== false
 
@@ -423,6 +481,16 @@ export const getSegmentSpeed = (keyframe: CameraKeyframe): number =>
 
 export const getSegmentSpeedCurve = (keyframe: CameraKeyframe): SpeedCurveType =>
   normalizeSpeedCurve(keyframe.speedCurveToNext)
+
+export const getSegmentSpeedCurvePoints = (
+  keyframe: CameraKeyframe,
+): SpeedCurvePoint[] =>
+  normalizeCustomSpeedCurvePoints(keyframe.speedCurvePointsToNext)
+
+export const getSegmentSpeedCurveInterpolation = (
+  keyframe: CameraKeyframe,
+): SpeedCurveInterpolation =>
+  normalizeSpeedCurveInterpolation(keyframe.speedCurveInterpolationToNext)
 
 export const getTimelineMode = (scene: SceneDocument): TimelineMode =>
   scene.timeline.mode ?? 'motion'
@@ -525,6 +593,8 @@ export const adjustProgressBySpeed = (
   progress: number,
   speed: number,
   speedCurve: SpeedCurveType = 'linear',
+  speedCurvePoints?: SpeedCurvePoint[],
+  speedCurveInterpolation: SpeedCurveInterpolation = 'linear',
 ): number => {
   const clampedProgress = clamp(progress, 0, 1)
   const clampedSpeed = getSegmentSpeed({
@@ -538,12 +608,29 @@ export const adjustProgressBySpeed = (
   })
 
   if (Math.abs(clampedSpeed - 1) < 0.001) {
-    return applySpeedCurve(clampedProgress, speedCurve)
+    return applySpeedCurve(
+      clampedProgress,
+      speedCurve,
+      speedCurvePoints,
+      speedCurveInterpolation,
+    )
+  }
+
+  if (speedCurve === 'custom') {
+    const customProgress = applySpeedCurve(
+      clampedProgress,
+      speedCurve,
+      speedCurvePoints,
+      speedCurveInterpolation,
+    )
+    return 1 - Math.pow(1 - customProgress, clampedSpeed)
   }
 
   return applySpeedCurve(
     1 - Math.pow(1 - clampedProgress, clampedSpeed),
     speedCurve,
+    speedCurvePoints,
+    speedCurveInterpolation,
   )
 }
 
@@ -555,6 +642,8 @@ export const getCameraSegments = (
   index: number
   speed: number
   speedCurve: SpeedCurveType
+  speedCurvePoints: SpeedCurvePoint[]
+  speedCurveInterpolation: SpeedCurveInterpolation
   curve: CameraCurveType
   curveStrength: number
   controlPoint: Vec3
@@ -576,6 +665,8 @@ export const getCameraSegments = (
         index,
         speed: getSegmentSpeed(from),
         speedCurve: getSegmentSpeedCurve(from),
+        speedCurvePoints: getSegmentSpeedCurvePoints(from),
+        speedCurveInterpolation: getSegmentSpeedCurveInterpolation(from),
         curve: getSegmentCurve(from),
         curveStrength: getSegmentCurveStrength(from),
         controlPoint: getCurveControlPoint(from, to),
@@ -905,6 +996,8 @@ export const sampleCameraAtTime = (
     progress,
     getSegmentSpeed(from),
     getSegmentSpeedCurve(from),
+    getSegmentSpeedCurvePoints(from),
+    getSegmentSpeedCurveInterpolation(from),
   )
 
   return withCameraMotion(scene, timeSec, {

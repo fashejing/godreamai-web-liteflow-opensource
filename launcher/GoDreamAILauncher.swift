@@ -24,8 +24,8 @@ private let launcherVersionText: String = {
     return "dev"
 }()
 private let launcherModelSummary = """
-生图：Seedream 5.0 Lite / Seedream 4.5 / Kling Image 3.0 / Kling Image 3.0 Omni
-生视频：Seedance 2.0 / Seedance 2.0 Fast / Kling 3.0 Turbo / Kling 3.0 Omni
+生图：Seedream 5.0 Pro / Seedream 5.0 Lite / Seedream 4.5 / Kling Image 3.0 / Kling Image 3.0 Omni
+生视频：Seedance 2.0 / Seedance 2.0 Fast / Seedance 2.0 Mini / Kling 3.0 Turbo / Kling 3.0 Omni
 """
 
 struct BackendResult: Decodable {
